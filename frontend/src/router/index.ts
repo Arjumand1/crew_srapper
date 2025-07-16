@@ -20,6 +20,25 @@ const router = createRouter({
       name: "register",
       component: () => import("../views/RegisterView.vue"),
     },
+    {
+      path: "/crew-sheets",
+      name: "crewSheets",
+      component: () => import("../views/CrewSheetListView.vue"),
+      meta: { requiresAuth: true },
+    },
+    {
+      path: "/crew-sheets/:id",
+      name: "crewSheet",
+      component: () => import("../views/CrewSheetDetailView.vue"),
+      meta: { requiresAuth: true },
+      props: true,
+    },
+    {
+      path: "/upload",
+      name: "upload",
+      component: () => import("../views/UploadView.vue"),
+      meta: { requiresAuth: true },
+    },
   ],
 });
 

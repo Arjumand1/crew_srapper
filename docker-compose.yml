@@ -21,6 +21,7 @@ services:
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - ./backend:/app
+      - media_data:/app/media
     ports:
       - "8000:8000"
     depends_on:
@@ -28,7 +29,10 @@ services:
         condition: service_healthy
     env_file:
       - ./backend/.env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
 
 volumes:
   postgres_data:
+  media_data:
