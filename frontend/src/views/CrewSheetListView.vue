@@ -22,7 +22,7 @@
             </button>
         </div>
 
-        <div v-if="crewSheets.length > 0" class="crew-sheets-grid">
+        <!-- <div v-if="crewSheets.length > 0" class="crew-sheets-grid">
             <div v-for="sheet in crewSheets" :key="sheet.id" class="crew-sheet-card" @click="viewSheet(sheet.id)">
                 <div class="status-indicator" :class="`status-${sheet.status}`"></div>
                 <div class="card-content">
@@ -35,7 +35,7 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </div> -->
 
         <div v-if="crewSheets.length > 0" class="list-view">
             <table>
@@ -117,11 +117,11 @@ const navigateToUpload = () => {
     router.push({ name: 'upload' });
 };
 
-const viewSheet = (id: number) => {
+const viewSheet = (id: string) => {
     router.push({ name: 'crewSheet', params: { id } });
 };
 
-const processSheet = async (id: number) => {
+const processSheet = async (id: string) => {
     try {
         await crewSheetStore.processCrewSheet(id);
         // Refresh the list after processing

@@ -119,7 +119,7 @@ const crewSheetStore = useCrewSheetStore();
 const loading = ref(true);
 const processing = ref(false);
 const error = ref<string | null>(null);
-const sheetId = computed(() => Number(route.params.id));
+const sheetId = computed(() => route.params.id as string);
 
 const currentSheet = computed<CrewSheet | null>(() => crewSheetStore.currentCrewSheet);
 

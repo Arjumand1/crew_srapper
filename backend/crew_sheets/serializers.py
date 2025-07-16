@@ -15,7 +15,7 @@ class CrewSheetUploadSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = CrewSheet
-        fields = ('name', 'image')
+        fields = ('id', 'name', 'image')
         
 
 class CrewSheetListSerializer(serializers.ModelSerializer):
