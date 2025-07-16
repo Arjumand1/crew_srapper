@@ -45,6 +45,9 @@
             <div v-if="currentSheet.status === 'failed'" class="error-container">
                 <h3>Processing Error</h3>
                 <p>{{ currentSheet.error_message }}</p>
+                <button @click="processCrewSheet" class="btn-retry" :disabled="processing">
+                    {{ processing ? 'Retrying...' : 'Retry Processing' }}
+                </button>
             </div>
 
             <!-- Extracted Data -->
@@ -450,5 +453,20 @@ tr:nth-child(even) {
     border-radius: 4px;
     overflow-x: auto;
     font-size: 0.9rem;
+}
+
+.btn-retry {
+    background-color: #4caf50;
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.btn-retry:disabled {
+    background-color: #a5d6a7;
+    cursor: not-allowed;
 }
 </style>

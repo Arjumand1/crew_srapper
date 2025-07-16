@@ -99,7 +99,7 @@ export const useCrewSheetStore = defineStore("crewSheets", {
 
       try {
         const authStore = useAuthStore();
-        await axios.post(
+        const response = await axios.post(
           `${API_URL}/crew-sheets/${id}/process/`,
           {},
           {
@@ -109,19 +109,26 @@ export const useCrewSheetStore = defineStore("crewSheets", {
           }
         );
 
+        // Update the processed sheet with the returned data
+        const processedSheet = response.data;
+
         // Update status in the local list
         const index = this.crewSheets.findIndex((sheet) => sheet.id === id);
         if (index !== -1) {
-          this.crewSheets[index].status = "processing";
+          this.crewSheets[index] = processedSheet;
         }
 
+        // Update current crew sheet if it's the one being processed
         if (this.currentCrewSheet?.id === id) {
-          this.currentCrewSheet.status = "processing";
+          this.currentCrewSheet = processedSheet;
         }
+
+        return processedSheet;
       } catch (error: any) {
         this.error =
           error.response?.data?.detail || "Failed to process crew sheet";
         console.error("Error processing crew sheet:", error);
+        throw error;
       } finally {
         this.loading = false;
       }
