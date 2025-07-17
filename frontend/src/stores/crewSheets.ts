@@ -58,11 +58,25 @@ export const useCrewSheetStore = defineStore("crewSheets", {
           },
         });
 
-        this.currentCrewSheet = response.data;
+        // Ensure extracted_data is properly parsed if it's a string
+        const crewSheet = response.data;
+        if (
+          crewSheet.extracted_data &&
+          typeof crewSheet.extracted_data === "string"
+        ) {
+          try {
+            crewSheet.extracted_data = JSON.parse(crewSheet.extracted_data);
+          } catch (parseError) {
+            console.error("Error parsing extracted_data JSON:", parseError);
+            // Keep as string if parsing fails
+          }
+        }
+
+        this.currentCrewSheet = crewSheet;
       } catch (error: any) {
         this.error =
-          error.response?.data?.detail || "Failed to fetch crew sheet";
-        console.error("Error fetching crew sheet:", error);
+          error.response?.data?.detail || `Failed to fetch crew sheet #${id}`;
+        console.error(`Error fetching crew sheet #${id}:`, error);
       } finally {
         this.loading = false;
       }
@@ -128,6 +142,55 @@ export const useCrewSheetStore = defineStore("crewSheets", {
         this.error =
           error.response?.data?.detail || "Failed to process crew sheet";
         console.error("Error processing crew sheet:", error);
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async updateCrewSheetData(id: string, extractedData: any) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const authStore = useAuthStore();
+
+        // Prepare the payload with just the extracted data
+        const payload = {
+          extracted_data: extractedData,
+        };
+
+        // Send a PATCH request to update just the extracted data
+        const response = await axios.patch(
+          `${API_URL}/crew-sheets/${id}/`,
+          payload,
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        // Update the sheet with the returned data
+        const updatedSheet = response.data;
+
+        // Update in the local list
+        const index = this.crewSheets.findIndex((sheet) => sheet.id === id);
+        if (index !== -1) {
+          this.crewSheets[index] = updatedSheet;
+        }
+
+        // Update current crew sheet if it's the one being updated
+        if (this.currentCrewSheet?.id === id) {
+          this.currentCrewSheet = updatedSheet;
+        }
+
+        return updatedSheet;
+      } catch (error: any) {
+        this.error =
+          error.response?.data?.detail || "Failed to update crew sheet data";
+        console.error("Error updating crew sheet data:", error);
         throw error;
       } finally {
         this.loading = false;

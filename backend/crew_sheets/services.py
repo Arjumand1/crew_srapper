@@ -2,174 +2,300 @@ import os
 import json
 import base64
 import logging
+import time
+import httpx
+import re
 from datetime import datetime
 from .models import CrewSheet
-from openai import OpenAI
-import httpx
+from openai import OpenAI, APITimeoutError, APIConnectionError, APIError
 
 logger = logging.getLogger(__name__)
 
-# Configure OpenAI client once at module level
-try:
-    # Create custom httpx client with explicit settings to avoid proxy issues
-    http_client = httpx.Client(
-        proxies=None,  # Explicitly disable proxies
-        timeout=60.0   # Set a reasonable timeout
-    )
-
-    # Create OpenAI client with custom http_client
-    openai_client = OpenAI(
-        api_key=os.environ.get('OPENAI_API_KEY'),
-        http_client=http_client
-    )
-    logger.info("OpenAI client initialized successfully with custom HTTP client")
-except Exception as e:
-    logger.warning(
-        f"Custom HTTP client initialization failed: {e}. Trying minimal client...")
-    try:
-        # Fallback to minimal client
-        openai_client = OpenAI(api_key=os.environ.get('OPENAI_API_KEY'))
-        logger.info("OpenAI client initialized with minimal configuration")
-    except Exception as e:
-        logger.error(f"Failed to initialize OpenAI client: {e}")
-        openai_client = None
-
 
 class OpenAIService:
-    """Service for interacting with OpenAI's GPT-4 Vision API."""
+    """Service for OpenAI API calls."""
+
+    @staticmethod
+    def get_client():
+        """
+        Get an OpenAI client instance.
+        """
+        api_key = os.environ.get('OPENAI_API_KEY')
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY environment variable not set")
+        if api_key in ['your-openai-api-key', 'sk-...', 'your_api_key_here']:
+            raise ValueError("OPENAI_API_KEY contains a placeholder value")
+        try:
+            # Increased timeout to 120 seconds to prevent timeouts
+            http_client = httpx.Client(proxies=None, timeout=120.0)
+            return OpenAI(api_key=api_key, http_client=http_client)
+        except Exception as e:
+            logger.error(f"Error initializing OpenAI client: {e}")
+            # fallback minimal client initialization
+            return OpenAI(api_key=api_key)
+
+    @staticmethod
+    def _call_openai_api_with_retry(client, messages, max_tokens=4096, max_retries=2, timeout=120):
+        """
+        Make a call to the OpenAI API with retry logic.
+
+        Args:
+            client: OpenAI client
+            messages: Messages to send to the API
+            max_tokens: Maximum tokens for the response
+            max_retries: Maximum number of retries
+            timeout: Timeout in seconds for the API call
+
+        Returns:
+            The API response or raises an exception if all retries fail
+        """
+        logger.info("Sending request to OpenAI API")
+
+        # Track retry attempts
+        attempts = 0
+        last_error = None
+
+        while attempts < max_retries:
+            try:
+                start_time = time.time()
+
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                    timeout=timeout
+                )
+
+                elapsed_time = time.time() - start_time
+                logger.info(
+                    f"OpenAI API call completed in {elapsed_time:.2f} seconds")
+
+                return response
+
+            except (httpx.TimeoutException, httpx.HTTPError) as e:
+                attempts += 1
+                last_error = e
+
+                if attempts < max_retries:
+                    # Calculate backoff time: 2^attempt * 1 second (2, 4, 8 seconds)
+                    backoff = min(2 ** attempts, 10)
+                    logger.warning(
+                        f"API call attempt {attempts} failed: {str(e)}. Retrying in {backoff}s...")
+                    time.sleep(backoff)
+                else:
+                    logger.error(
+                        f"API call failed after {max_retries} attempts: {str(e)}")
+                    raise
+
+            except Exception as e:
+                # Don't retry on non-timeout/HTTP errors
+                logger.error(f"API call failed with error: {str(e)}")
+                raise
+
+        # If we get here, we've exceeded retries
+        if last_error:
+            raise last_error
+        else:
+            raise Exception("Maximum retries exceeded with unknown error")
 
     @staticmethod
     def extract_crew_sheet_data(image_path):
         """
-        Extract data from a crew sheet image using OpenAI's GPT-4 Vision API.
+        Extracts structured data from a crew sheet image using OpenAI's GPT-4o model.
 
         Args:
-            image_path: Path to the image file
+            image_path: Path to the crew sheet image file.
 
         Returns:
-            dict: Extracted data in JSON format or error information
+            Dictionary containing the extracted data or error information.
         """
-        # Verify API key is set
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if not api_key:
-            logger.error("OPENAI_API_KEY environment variable not set")
-            return {
-                "valid": True,
-                "error": "OpenAI API key is not configured",
-                "data": {}
-            }
+        # Initialize error message with empty string to prevent NULL values
+        error_message = ""
 
-        if api_key in ['your-openai-api-key', 'sk-...', 'your_api_key_here']:
-            logger.error("OPENAI_API_KEY contains a placeholder value")
+        # Pre-check: Verify image exists and log size
+        if not os.path.exists(image_path):
             return {
-                "valid": True,
-                "error": "OpenAI API key contains a placeholder value",
-                "data": {}
-            }
-
-        # Verify client is initialized
-        if openai_client is None:
-            logger.error("OpenAI client failed to initialize")
-            return {
-                "valid": True,
-                "error": "OpenAI client could not be initialized",
-                "data": {}
+                "valid": False,
+                "error_message": f"Image file not found: {image_path}"
             }
 
         try:
-            # Read and encode the image to base64
-            with open(image_path, "rb") as image_file:
-                image_data = base64.b64encode(
-                    image_file.read()).decode('utf-8')
+            file_size_mb = os.path.getsize(image_path) / (1024 * 1024)
+            logger.info(
+                f"Processing image: {image_path} (Size: {file_size_mb:.2f}MB)")
 
-            # Create the message structure for GPT-4 Vision
-            messages = [
-                {
-                    "role": "system",
-                    "content": "You are an expert at extracting data from crew sheets and timesheets. Extract all relevant information into a structured JSON format."
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": """
-                            Please extract all information from this crew sheet or timesheet image into structured data.
-                            Follow these steps:
-                            1. First determine if this is a valid crew sheet or timesheet. If not, respond with {"valid": false, "reason": "explanation"}.
-                            2. If valid, extract the following:
-                               - Date of the sheet
-                               - Any header information or metadata (location, project, etc.)
-                               - Table headers (column names)
-                               - For each employee row:
-                                 - Employee name
-                                 - Hours worked (if available)
-                                 - Tasks performed (if available)
-                                 - Any other data in the row
-                            3. Return the extracted data in a clean, structured JSON format with appropriate nesting.
-                            """
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_data}"
-                            }
-                        }
-                    ]
-                }
-            ]
-
-            # Make the API call using the module-level client
-            logger.info("Making API call to OpenAI using GPT-4o")
-            response = openai_client.chat.completions.create(
-                model="gpt-4o",  # Using GPT-4o which now supports vision capabilities
-                messages=messages,
-                max_tokens=4096,
-                # Request JSON formatted response
-                response_format={"type": "json_object"},
-            )
-
-            # Extract and parse the response
-            result = response.choices[0].message.content
-            logger.info(f"Received response from OpenAI: {result[:100]}...")
-
-            try:
-                # Parse the JSON response
-                parsed_data = json.loads(result)
-                logger.info("Successfully parsed JSON response")
-                return parsed_data
-            except json.JSONDecodeError as json_err:
-                # Log the full error and response for debugging
-                logger.error(f"JSON parsing error: {json_err}")
-                logger.error(f"Failed JSON content: {result}")
-
-                # Try to fix common JSON issues (missing brackets, extra text, etc.)
-                try:
-                    # Look for JSON-like structure within the text
-                    import re
-                    json_match = re.search(r'(\{.*\})', result, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(1)
-                        return json.loads(json_str)
-                    else:
-                        raise ValueError("No JSON structure found in response")
-                except Exception as e:
-                    logger.exception("Failed to repair malformed JSON")
-                    return {
-                        "valid": True,
-                        "error": f"Failed to parse OpenAI response as JSON: {str(json_err)}",
-                        "data": {},
-                        # Include partial response for debugging
-                        "raw_response": result[:500]
-                    }
+            if file_size_mb > 10:
+                logger.warning(
+                    f"Large image detected ({file_size_mb:.2f}MB), may cause timeouts")
         except Exception as e:
-            error_msg = f"Failed to process image: {str(e)}"
-            logger.exception(error_msg)
+            logger.error(f"Error checking image file: {str(e)}")
+
+        # Encode image to base64
+        try:
+            with open(image_path, "rb") as image_file:
+                base64_image = base64.b64encode(
+                    image_file.read()).decode("utf-8")
+        except Exception as e:
+            error_message = f"Failed to read or encode image: {str(e)}"
             return {
-                "valid": True,
-                "error": error_msg,
-                "data": {}
+                "valid": False,
+                "error_message": error_message
             }
+
+        # Prepare OpenAI client with increased timeout
+        client = OpenAI(
+            api_key=os.environ.get("OPENAI_API_KEY"),
+            timeout=180.0,  # Increased timeout to 3 minutes for large images
+        )
+
+        # Configure the system prompt for data extraction
+        messages = [
+            {
+                "role": "system",
+                "content": """Extract all data from this crew sheet with exact precision:
+
+1. Extract ALL table headers exactly as written
+2. Extract EVERY employee row with ALL cell data
+3. Include sheet date, metadata, and any notes
+4. Maintain the EXACT table structure
+
+Format as JSON:
+{
+  "date": "sheet date",
+  "valid": true,
+  "metadata": {
+    "hours": "total hours if present",
+    "employees": "employee count if present",
+    "sheet_number": "sheet number if present"
+  },
+  "table_headers": ["Header1", "Header2", ...],
+  "employees": [
+    {
+      "name": "Employee Name",
+      "header1": "value1",
+      "header2": "value2",
+      ...
+    },
+    ...
+  ]
+}
+
+For unclear text, use "uncertain": true flag. Include ALL rows even if partially filled."""
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Extract all data from this crew sheet image as structured JSON. Include all headers, rows, and metadata."
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_image}"
+                        }
+                    }
+                ]
+            }
+        ]
+
+        # Track attempt count for retries
+        attempt = 1
+        max_attempts = 3
+        backoff_factor = 2  # For exponential backoff
+
+        while attempt <= max_attempts:
+            try:
+                logger.info(
+                    f"Attempt {attempt}/{max_attempts}: Calling OpenAI API...")
+                start_time = time.time()
+
+                # Make the API call with response_format specified for JSON
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=messages,
+                    max_tokens=4096,
+                    temperature=0.1,  # Low temperature for more deterministic output
+                    response_format={"type": "json_object"},
+                    timeout=180,  # Setting timeout at API call level as well
+                )
+
+                # Log the duration and token usage
+                duration = time.time() - start_time
+                logger.info(f"OpenAI API call completed in {duration:.2f}s")
+
+                # Get the response content
+                content = response.choices[0].message.content
+
+                # Parse JSON response
+                try:
+                    extracted_data = json.loads(content)
+                    logger.info(
+                        "Successfully parsed JSON from OpenAI response")
+
+                    # Add validation flag if not present
+                    if "valid" not in extracted_data:
+                        extracted_data["valid"] = True
+
+                    return extracted_data
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON parsing error: {str(e)}")
+
+                    # Attempt to extract JSON using regex as fallback
+                    logger.info(
+                        "Attempting to extract JSON with regex fallback")
+                    try:
+                        # Look for content between curly braces, including nested structures
+                        json_match = re.search(r'({[\s\S]*})', content)
+                        if json_match:
+                            extracted_json_str = json_match.group(1)
+                            extracted_data = json.loads(extracted_json_str)
+                            logger.info(
+                                "Successfully extracted JSON with regex fallback")
+
+                            # Add validation flag if not present
+                            if "valid" not in extracted_data:
+                                extracted_data["valid"] = True
+
+                            return extracted_data
+                    except Exception as regex_err:
+                        logger.error(
+                            f"Regex JSON extraction failed: {str(regex_err)}")
+
+                    error_message = f"Failed to parse JSON response: {str(e)}"
+
+            except APITimeoutError as e:
+                logger.warning(
+                    f"OpenAI API timeout on attempt {attempt}/{max_attempts}: {str(e)}")
+                error_message = f"API timeout: {str(e)}"
+            except APIConnectionError as e:
+                logger.warning(
+                    f"OpenAI API connection error on attempt {attempt}/{max_attempts}: {str(e)}")
+                error_message = f"API connection error: {str(e)}"
+            except APIError as e:
+                logger.warning(
+                    f"OpenAI API error on attempt {attempt}/{max_attempts}: {str(e)}")
+                error_message = f"API error: {str(e)}"
+            except Exception as e:
+                logger.error(
+                    f"Unexpected error on attempt {attempt}/{max_attempts}: {str(e)}")
+                error_message = f"Unexpected error: {str(e)}"
+
+            # If we haven't reached max attempts, back off and retry
+            if attempt < max_attempts:
+                wait_time = backoff_factor ** attempt
+                logger.info(
+                    f"Backing off for {wait_time} seconds before retry...")
+                time.sleep(wait_time)
+
+            attempt += 1
+
+        # If we've exhausted all attempts, return an error
+        return {
+            "valid": False,
+            "error_message": error_message or "Failed to extract data after multiple attempts"
+        }
 
 
 class CrewSheetProcessor:
@@ -186,13 +312,29 @@ class CrewSheetProcessor:
         Returns:
             bool: True if processing was successful, False otherwise
         """
+        # Initialize with empty error message to avoid NULL constraint violations
+        error_message = ""
+
         try:
             # Get the crew sheet
             crew_sheet = CrewSheet.objects.get(id=crew_sheet_id)
 
             # Update status
             crew_sheet.status = 'processing'
+            crew_sheet.error_message = ""  # Clear any previous errors
             crew_sheet.save()
+
+            # Check if image file exists
+            if not crew_sheet.image or not os.path.exists(crew_sheet.image.path):
+                error_message = "Image file not found or inaccessible"
+                crew_sheet.status = 'failed'
+                crew_sheet.error_message = error_message
+                crew_sheet.date_processed = datetime.now()
+                crew_sheet.save()
+                return False
+
+            logger.info(
+                f"Processing crew sheet: {crew_sheet_id}, image: {crew_sheet.image.path}")
 
             # Process the image using OpenAI Vision
             extracted_data = OpenAIService.extract_crew_sheet_data(
@@ -201,12 +343,14 @@ class CrewSheetProcessor:
             # Check if there was an error in processing
             if "error" in extracted_data:
                 # Save the error message separately, but keep the status as failed
+                error_message = extracted_data.pop("error") or "Unknown error"
                 crew_sheet.status = 'failed'
-                crew_sheet.error_message = extracted_data.pop(
-                    "error")  # Remove error from extracted data
+                crew_sheet.error_message = error_message
                 crew_sheet.extracted_data = extracted_data  # Save the cleaned data
                 crew_sheet.date_processed = datetime.now()
                 crew_sheet.save()
+                logger.error(
+                    f"Failed to process crew sheet {crew_sheet_id}: {error_message}")
                 return False
 
             # Update the crew sheet with the extracted data - normal flow
@@ -217,28 +361,34 @@ class CrewSheetProcessor:
 
             # Only set error message if the sheet is invalid
             if not extracted_data.get('valid', True):
-                crew_sheet.error_message = extracted_data.get(
-                    'reason', 'Unknown error')
+                error_message = extracted_data.get(
+                    'reason', 'Invalid crew sheet')
+                crew_sheet.error_message = error_message
             else:
-                crew_sheet.error_message = ""  # Use empty string instead of None for NOT NULL constraint
+                # Use empty string for NOT NULL constraint
+                crew_sheet.error_message = ""
 
             crew_sheet.save()
+            logger.info(f"Successfully processed crew sheet {crew_sheet_id}")
             return True
 
         except Exception as e:
+            error_message = str(e) if str(e) else "Unknown error occurred"
             logger.exception(
-                f"Error processing crew sheet {crew_sheet_id}: {str(e)}")
+                f"Error processing crew sheet {crew_sheet_id}: {error_message}")
 
             try:
                 # Try to update the crew sheet status
                 crew_sheet = CrewSheet.objects.get(id=crew_sheet_id)
                 crew_sheet.status = 'failed'
-                crew_sheet.error_message = str(e) if str(e) else ""  # Use empty string instead of None for NOT NULL constraint
+                # Use empty string instead of None for NOT NULL constraint
+                crew_sheet.error_message = error_message
                 crew_sheet.date_processed = datetime.now()
 
                 # Don't save the error in the extracted data
                 if not crew_sheet.extracted_data:
-                    crew_sheet.extracted_data = {"valid": True, "data": {}}
+                    crew_sheet.extracted_data = {
+                        "valid": False, "error": error_message}
 
                 crew_sheet.save()
             except Exception as inner_e:
