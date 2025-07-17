@@ -8,7 +8,7 @@ class CrewSheetSerializer(serializers.ModelSerializer):
     class Meta:
         model = CrewSheet
         fields = '__all__'
-        read_only_fields = ('id', 'user', 'date_uploaded', 'extracted_data',
+        read_only_fields = ('id', 'user', 'date_uploaded',
                             'status', 'date_processed', 'error_message')
 
 
@@ -21,8 +21,16 @@ class CrewSheetUploadSerializer(serializers.ModelSerializer):
 
 
 class CrewSheetListSerializer(serializers.ModelSerializer):
-    """Serializer for listing crew sheets with minimal data."""
+    """Serializer for listing crew sheets with minimal fields."""
 
     class Meta:
         model = CrewSheet
         fields = ('id', 'name', 'date_uploaded', 'status', 'image')
+
+
+class CrewSheetUpdateSerializer(serializers.ModelSerializer):
+    """Serializer for updating crew sheet data."""
+
+    class Meta:
+        model = CrewSheet
+        fields = ('extracted_data',)

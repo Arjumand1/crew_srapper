@@ -3,6 +3,7 @@ from .models import CrewSheet
 
 # Register your models here.
 
+
 @admin.register(CrewSheet)
 class CrewSheetAdmin(admin.ModelAdmin):
     list_display = ('name', 'user', 'date_uploaded', 'status')

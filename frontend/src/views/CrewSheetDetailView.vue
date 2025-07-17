@@ -65,6 +65,9 @@
                             <button @click="addRow" class="add-row-btn">
                                 Add Row
                             </button>
+                            <button @click="toggleHeaderEditing" class="add-row-btn" style="margin-left:5px">
+                                {{ editingHeaders ? 'Done Editing Headers' : 'Edit Headers' }}
+                            </button>
                         </div>
 
                         <div class="excel-table-container">
@@ -77,13 +80,36 @@
                                     </div>
 
                                     <!-- Data column headers -->
-                                    <div v-for="header in tableHeaders" :key="header"
-                                        class="excel-cell excel-header-cell"
-                                        :class="{ 'name-cell': header === 'EMPLOYEE NAME' }" @click="sortTable(header)">
-                                        {{ header }}
-                                        <span v-if="sortColumn === header" class="sort-icon">
-                                            {{ sortDirection === 'asc' ? '▲' : '▼' }}
-                                        </span>
+                                    <div v-for="(header, index) in editingHeaders ? editableHeaders : tableHeaders"
+                                        :key="header + '-' + index" class="excel-cell excel-header-cell"
+                                        :class="{ 'name-cell': header === 'EMPLOYEE NAME' }">
+                                        <template v-if="editingHeaders">
+                                            <input type="text" :value="header"
+                                                @input="(e) => updateEditableHeader(index, e.target.value)" @click.stop
+                                                style="width: 90%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
+                                            <button v-if="header !== 'EMPLOYEE NAME'" @click.stop="removeHeader(index)"
+                                                class="excel-btn-delete small-delete">
+                                                ×
+                                            </button>
+                                        </template>
+                                        <template v-else>
+                                            <div @click="sortTable(header)" class="header-content">
+                                                {{ header }}
+                                                <span v-if="sortColumn === header" class="sort-icon">
+                                                    {{ sortDirection === 'asc' ? '▲' : '▼' }}
+                                                </span>
+                                            </div>
+                                        </template>
+                                    </div>
+
+                                    <!-- Add new header button -->
+                                    <div v-if="editingHeaders" class="excel-cell excel-header-cell">
+                                        <input type="text" v-model="newHeader" @keydown.enter="addHeader"
+                                            placeholder="New header" @click.stop
+                                            style="width: 90%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
+                                        <button @click.stop="addHeader" class="excel-btn-add">
+                                            +
+                                        </button>
                                     </div>
 
                                     <!-- Action column header -->
@@ -135,12 +161,12 @@
                 </div>
 
                 <!-- Raw JSON Data -->
-                <div class="raw-json">
+                <!-- <div class="raw-json">
                     <details>
                         <summary>View Raw JSON Data</summary>
                         <pre>{{ JSON.stringify(currentSheet.extracted_data, null, 2) }}</pre>
                     </details>
-                </div>
+                </div> -->
             </div>
         </div>
     </div>
@@ -176,15 +202,16 @@ const isEdited = ref(false);
 const editableEmployees = ref<any[]>([]);
 const sortColumn = ref('');
 const sortDirection = ref('asc');
-// const tableHeaders = ref<string[]>([]);
+const tableHeaders = ref<string[]>([]);
+const editingHeaders = ref(false);
+const editableHeaders = ref<string[]>([]);
+const newHeader = ref('');
 
-// Table headers computed property
-const tableHeaders = computed(() => {
-    console.log("Computing table headers from currentSheet:", currentSheet.value);
-
+// Table headers initialization
+const initTableHeaders = () => {
     if (!currentSheet.value || !currentSheet.value.extracted_data) {
-        console.log("No current sheet or extracted data");
-        return [];
+        tableHeaders.value = [];
+        return;
     }
 
     // Parse the extracted data if it's a string
@@ -192,50 +219,42 @@ const tableHeaders = computed(() => {
         ? JSON.parse(currentSheet.value.extracted_data)
         : currentSheet.value.extracted_data;
 
-    console.log("Parsed extracted data:", extractedData);
 
     // Try different possible fields where headers might be stored
     let headers = [];
 
     // First priority: table_headers array
     if (extractedData.table_headers && Array.isArray(extractedData.table_headers)) {
-        console.log("Using table_headers array");
         headers = [...extractedData.table_headers];
     }
     // Second priority: headers array
     else if (extractedData.headers && Array.isArray(extractedData.headers)) {
-        console.log("Using headers array");
         headers = [...extractedData.headers];
     }
     // Third priority: column_names array
     else if (extractedData.column_names && Array.isArray(extractedData.column_names)) {
-        console.log("Using column_names array");
         headers = [...extractedData.column_names];
     }
     // Fourth priority: extract keys from the first employee object
     else if (extractedData.employees && extractedData.employees.length > 0) {
-        console.log("Extracting headers from first employee object");
         headers = Object.keys(extractedData.employees[0])
             .filter(key => key !== '_edited' && key !== 'uncertain'); // Exclude special properties
     }
     // Fifth priority: extract from data array if it exists
     else if (extractedData.data && extractedData.data.length > 0) {
-        console.log("Extracting headers from first data object");
         headers = Object.keys(extractedData.data[0])
             .filter(key => key !== '_edited' && key !== 'uncertain');
     }
     // Last priority: extract from rows array if it exists
     else if (extractedData.rows && extractedData.rows.length > 0) {
-        console.log("Extracting headers from first row object");
         headers = Object.keys(extractedData.rows[0])
             .filter(key => key !== '_edited' && key !== 'uncertain');
     }
     else {
-        console.log("No headers found, using empty array");
-        return [];
+        tableHeaders.value = [];
+        return;
     }
 
-    console.log("Initial headers:", headers);
 
     // Make sure "name" field is always displayed as "EMPLOYEE NAME"
     // and is always first in the headers list
@@ -280,15 +299,12 @@ const tableHeaders = computed(() => {
     // Add the rest of the headers
     standardizedHeaders.push(...headers);
 
-    console.log("Final standardized headers:", standardizedHeaders);
-    return standardizedHeaders;
-});
+    tableHeaders.value = standardizedHeaders;
+};
 
 // Initialize the employees data
 const initEmployees = () => {
-    console.log("Initializing employees data");
     if (!currentSheet.value || !currentSheet.value.extracted_data) {
-        console.log("No current sheet or extracted data");
         editableEmployees.value = [];
         return;
     }
@@ -298,25 +314,20 @@ const initEmployees = () => {
         ? JSON.parse(currentSheet.value.extracted_data)
         : currentSheet.value.extracted_data;
 
-    console.log("Parsed extracted data for employees:", extractedData);
 
     // First priority: employees array
     if (extractedData.employees && Array.isArray(extractedData.employees)) {
-        console.log("Using employees array");
         editableEmployees.value = JSON.parse(JSON.stringify(extractedData.employees));
     }
     // Second priority: data array
     else if (extractedData.data && Array.isArray(extractedData.data)) {
-        console.log("Using data array");
         editableEmployees.value = JSON.parse(JSON.stringify(extractedData.data));
     }
     // Third priority: rows array
     else if (extractedData.rows && Array.isArray(extractedData.rows)) {
-        console.log("Using rows array");
         editableEmployees.value = JSON.parse(JSON.stringify(extractedData.rows));
     }
     else {
-        console.log("No employees data found, using empty array");
         editableEmployees.value = [];
     }
 
@@ -337,7 +348,115 @@ const initEmployees = () => {
         employee._edited = [];
     });
 
-    console.log("Initialized employees:", editableEmployees.value);
+};
+
+// Toggle header editing mode
+const toggleHeaderEditing = () => {
+    if (editingHeaders.value) {
+        // Finishing edit mode - apply changes
+        applyHeaderChanges();
+        editingHeaders.value = false;
+    } else {
+        // Starting edit mode - create a copy of the current headers
+        editableHeaders.value = [...tableHeaders.value];
+        editingHeaders.value = true;
+    }
+};
+
+// Apply header changes when finishing edit mode
+const applyHeaderChanges = () => {
+    // Check if headers have changed
+    const hasChanges = tableHeaders.value.length !== editableHeaders.value.length ||
+        tableHeaders.value.some((header, index) =>
+            header !== editableHeaders.value[index]
+        );
+
+    if (!hasChanges) return;
+
+    // Create a mapping of old header names to new header names
+    const headerChanges = new Map();
+    const commonLength = Math.min(tableHeaders.value.length, editableHeaders.value.length);
+
+    // Track headers that were renamed
+    for (let i = 0; i < commonLength; i++) {
+        const oldHeader = tableHeaders.value[i];
+        const newHeader = editableHeaders.value[i];
+        if (oldHeader !== newHeader) {
+            headerChanges.set(oldHeader, newHeader);
+        }
+    }
+
+    // Find any new headers that were added (not renames)
+    const newHeaders = editableHeaders.value.filter(
+        header => !tableHeaders.value.includes(header)
+    );
+
+    // Update the properties in all employees
+    editableEmployees.value.forEach(employee => {
+        // Handle renamed headers first
+        headerChanges.forEach((newHeader, oldHeader) => {
+            if (oldHeader in employee) {
+                // Copy the value to the new property
+                employee[newHeader] = employee[oldHeader];
+                // Delete the old property
+                delete employee[oldHeader];
+            }
+        });
+
+        // Handle new headers
+        newHeaders.forEach(header => {
+            if (!(header in employee)) {
+                employee[header] = '';
+            }
+        });
+    });
+
+    // Update the actual headers array
+    tableHeaders.value = [...editableHeaders.value];
+
+    // Mark as edited
+    isEdited.value = true;
+};
+
+// Update editable header
+const updateEditableHeader = (index: number, value: string) => {
+    if (index >= 0 && index < editableHeaders.value.length) {
+        editableHeaders.value[index] = value;
+    }
+};
+
+// Add new header
+const addHeader = () => {
+    if (newHeader.value.trim() !== '') {
+        const newHeaderName = newHeader.value.trim();
+        editableHeaders.value.push(newHeaderName);
+
+        // Initialize the new field for all employees
+        // This ensures every employee has a value (empty string) for the new field
+        // when applying the header changes later
+        editableEmployees.value.forEach(employee => {
+            if (!(newHeaderName in employee)) {
+                employee[newHeaderName] = '';
+            }
+        });
+
+        newHeader.value = '';
+    }
+};
+
+// Remove header
+const removeHeader = (index: number) => {
+    if (index >= 0 && index < editableHeaders.value.length) {
+        const headerToRemove = editableHeaders.value[index];
+
+        // Don't allow removing the EMPLOYEE NAME header
+        if (headerToRemove === 'EMPLOYEE NAME') {
+            alert('Cannot remove the EMPLOYEE NAME header');
+            return;
+        }
+
+        editableHeaders.value.splice(index, 1);
+    }
 };
 
 // Sort function for the table
@@ -356,7 +475,7 @@ watch(
     () => currentSheet.value,
     (newSheet) => {
         if (newSheet) {
-            console.log('Current Sheet changed, initializing employees');
+            initTableHeaders();
             initEmployees();
         }
     },
@@ -426,14 +545,6 @@ const downloadExcel = () => {
                         employee.employee_name || employee['EMPLOYEE NAME'] || '';
 
                     // Debug logging to see what's available
-                    console.log('Employee:', employee);
-                    console.log('Name header:', header);
-                    console.log('Available name values:', {
-                        headerValue: employee[header],
-                        name: employee.name,
-                        employeeName: employee.employee_name,
-                        employeeNameUppercase: employee['EMPLOYEE NAME']
-                    });
                 } else {
                     // Normal handling for other fields
                     cellValue = employee[header] || '';
@@ -461,7 +572,6 @@ const downloadExcel = () => {
         const fileName = `${sheetName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
         XLSX.writeFile(workbook, fileName);
 
-        console.log('Excel file generated successfully:', fileName);
     } catch (error) {
         console.error('Error generating Excel:', error);
         alert('Error generating Excel file');
@@ -569,28 +679,6 @@ const canDownload = computed(() => {
     return currentSheet.value?.status === 'completed' && employees.value.length > 0;
 });
 
-// Debug function to examine crew sheet data
-const debugData = () => {
-    console.log('Current Sheet:', currentSheet.value);
-    console.log('Extracted Data Type:', typeof currentSheet.value?.extracted_data);
-    console.log('Extracted Data:', currentSheet.value?.extracted_data);
-    console.log('Parsed Employees:', employees.value);
-    console.log('Editable Employees:', editableEmployees.value);
-    console.log('Table Headers:', tableHeaders.value);
-};
-
-// Methods
-const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    }).format(date);
-};
-
 const formatLabel = (key: string) => {
     return key.split('_')
         .map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -689,7 +777,6 @@ const handleCellInput = (event: any, rowIndex: number, header: string) => {
         editableEmployees.value[rowIndex]._edited.push(fieldName);
     }
 
-    console.log(`Edited ${fieldName} in row ${rowIndex}`);
 };
 
 // Prepare row data for a new employee
@@ -732,17 +819,38 @@ const saveChanges = async () => {
         // Handle the case where extracted_data might be a string
         if (typeof currentSheet.value.extracted_data === 'string') {
             updatedData = JSON.parse(currentSheet.value.extracted_data);
+
+            // Update with our edited data
             updatedData.employees = editableEmployees.value;
+            updatedData.table_headers = tableHeaders.value;
+
+            // Ensure the structure is consistent
+            if (!updatedData.employees && updatedData.data) {
+                updatedData.data = editableEmployees.value;
+            } else if (!updatedData.employees && updatedData.rows) {
+                updatedData.rows = editableEmployees.value;
+            }
 
             await crewSheetStore.updateCrewSheetData(
                 currentSheet.value.id,
-                JSON.stringify(updatedData)
+                updatedData
             );
         } else {
             updatedData = {
                 ...currentSheet.value.extracted_data,
-                employees: editableEmployees.value
+                employees: editableEmployees.value,
+                table_headers: tableHeaders.value
             };
+
+            // Ensure the structure is consistent
+            if (!updatedData.employees && updatedData.data) {
+                updatedData.data = editableEmployees.value;
+                delete updatedData.employees;
+            } else if (!updatedData.employees && updatedData.rows) {
+                updatedData.rows = editableEmployees.value;
+                delete updatedData.employees;
+            }
+
 
             await crewSheetStore.updateCrewSheetData(
                 currentSheet.value.id,
@@ -752,6 +860,14 @@ const saveChanges = async () => {
 
         isEdited.value = false;
         alert('Changes saved successfully');
+
+        // Refresh the data from the server to show the updated version
+        await crewSheetStore.fetchCrewSheet(sheetId.value.toString());
+
+        // Re-initialize the view with the updated data
+        initTableHeaders();
+        initEmployees();
+
     } catch (e) {
         console.error('Error saving changes:', e);
         alert('Error saving changes. Please try again.');
@@ -795,7 +911,7 @@ onMounted(async () => {
         loading.value = true;
         await crewSheetStore.fetchCrewSheet(sheetId.value.toString());
         // Debug data after fetch completes
-        setTimeout(debugData, 1000);
+        initTableHeaders();
         initEmployees();
     } catch (e) {
         if (e instanceof Error) {
@@ -809,11 +925,10 @@ onMounted(async () => {
 });
 </script>
 <style scoped>
-
 .crew-sheet-detail {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 2rem;
+    padding: 20px;
 }
 
 .header {
@@ -981,18 +1096,30 @@ onMounted(async () => {
 }
 
 .excel-btn-delete {
-    background-color: #ff4757;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    padding: 5px 10px;
+    margin-left: 4px;
+    color: #ff4d4f;
     cursor: pointer;
-    font-size: 0.8rem;
-    transition: background-color 0.2s;
+    background: #fff;
+    border: 1px solid #ff4d4f;
+    border-radius: 4px;
+    padding: 2px 6px;
 }
 
-.excel-btn-delete:hover {
-    background-color: #ff6b81;
+.small-delete {
+    padding: 0px 4px;
+    margin-left: 2px;
+    font-weight: bold;
+}
+
+.excel-btn-add {
+    margin-left: 2px;
+    color: #52c41a;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid #52c41a;
+    border-radius: 4px;
+    padding: 0px 4px;
+    font-weight: bold;
 }
 
 .excel-grid {
@@ -1206,5 +1333,37 @@ onMounted(async () => {
     justify-content: center;
     font-weight: bold;
     background-color: #f0f0f0;
+}
+
+.excel-btn-delete {
+    margin-left: 4px;
+    color: #ff4d4f;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid #ff4d4f;
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+.small-delete {
+    padding: 0px 4px;
+    margin-left: 2px;
+    font-weight: bold;
+}
+
+.excel-btn-add {
+    margin-left: 2px;
+    color: #52c41a;
+    cursor: pointer;
+    background: #fff;
+    border: 1px solid #52c41a;
+    border-radius: 4px;
+    padding: 0px 4px;
+    font-weight: bold;
+}
+
+.header-content {
+    width: 100%;
+    cursor: pointer;
 }
 </style>
