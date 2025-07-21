@@ -1,168 +1,81 @@
 <template>
-    <div class="home-container">
-        <div class="home-content">
-            <h1>Welcome to Crew Scraper</h1>
-
-            <div v-if="authStore.user" class="user-info">
-                <h2>User Information</h2>
-                <p><strong>Name:</strong> {{ authStore.user.name }}</p>
-                <p><strong>Email:</strong> {{ authStore.user.email }}</p>
-                <p><strong>Username:</strong> {{ authStore.user.username }}</p>
+  <v-container class="d-flex align-center justify-center fill-height" fluid>
+    <v-card class="pa-8 elevation-3 mt-lg-8 mt-sm-6 mt-4 w-lg-50 w-md-75  w-100">
+      <div class="text-h4 text-center"
+        >Welcome to Crew Scraper</div
+      >
+      <div v-if="authStore.user" class="mb-8 mt-6">
+        <v-card class="mb-6 pa-4" color="grey-lighten-4" flat>
+          <div class="text-h6 mb-2">User Information</div>
+          <div><strong>Name:</strong> {{ authStore.user.name }}</div>
+          <div><strong>Email:</strong> {{ authStore.user.email }}</div>
+          <div><strong>Username:</strong> {{ authStore.user.username }}</div>
+        </v-card>
+      </div>
+      <div v-else class="mb-8">
+        <v-alert type="info" class="mb-4" border="start" variant="tonal"
+          >Loading user information...</v-alert
+        >
+      </div>
+      <v-row class="mb-8" align="stretch" justify="center">
+        <v-col cols="12" sm="6">
+          <v-card
+            class="pa-6 text-center d-flex flex-column justify-space-between cursor-pointer elevation-2"
+            @click="navigateTo('crewSheets')"
+          >
+            <div>
+              <div class="text-h6 mb-2">View Crew Sheets</div>
+              <div class="mb-4">
+                View and manage all your uploaded crew sheets
+              </div>
             </div>
-            <div v-else class="loading">
-                <p>Loading user information...</p>
+            <div class="text-h5">📋</div>
+          </v-card>
+        </v-col>
+        <v-col cols="12" sm="6">
+          <v-card
+            class="pa-6 text-center fill-height d-flex flex-column justify-space-between cursor-pointer elevation-2"
+            @click="navigateTo('upload')"
+          >
+            <div>
+              <div class="text-h6 mb-2">Upload New Sheet</div>
+              <div class="mb-4">Upload a new crew sheet for AI processing</div>
             </div>
-
-            <div class="action-cards">
-                <div class="card" @click="navigateTo('crewSheets')">
-                    <h3>View Crew Sheets</h3>
-                    <p>View and manage all your uploaded crew sheets</p>
-                    <div class="icon">📋</div>
-                </div>
-
-                <div class="card" @click="navigateTo('upload')">
-                    <h3>Upload New Sheet</h3>
-                    <p>Upload a new crew sheet for AI processing</p>
-                    <div class="icon">📎</div>
-                </div>
-            </div>
-
-            <button @click="logout" class="logout-button">Logout</button>
-        </div>
-    </div>
+            <div class="text-h5">📎</div>
+          </v-card>
+        </v-col>
+      </v-row>
+      <v-btn color="error" block class="font-weight-bold" @click="logout"
+        >Logout</v-btn
+      >
+    </v-card>
+  </v-container>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useAuthStore } from '../stores/auth'
+import { onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { useAuthStore } from "../stores/auth";
 
-const router = useRouter()
-const authStore = useAuthStore()
+const router = useRouter();
+const authStore = useAuthStore();
 
 onMounted(async () => {
-    try {
-        if (!authStore.user && authStore.accessToken) {
-            await authStore.fetchUser()
-        }
-    } catch (error) {
-        console.error('Failed to fetch user:', error)
+  try {
+    if (!authStore.user && authStore.accessToken) {
+      await authStore.fetchUser();
     }
-})
+  } catch (error) {
+    console.error("Failed to fetch user:", error);
+  }
+});
 
 const navigateTo = (routeName: string) => {
-    router.push({ name: routeName })
-}
+  router.push({ name: routeName });
+};
 
 const logout = () => {
-    authStore.logout()
-    router.push('/login')
-}
+  authStore.logout();
+  router.push("/login");
+};
 </script>
-
-<style scoped>
-.home-container {
-    display: flex;
-    justify-content: center;
-    padding: 2rem;
-    min-height: 100vh;
-    background-color: #f5f5f5;
-}
-
-.home-content {
-    width: 100%;
-    max-width: 800px;
-    padding: 2rem;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-h1 {
-    margin-bottom: 2rem;
-    color: #2c3e50;
-    text-align: center;
-}
-
-h2 {
-    margin: 1.5rem 0 1rem;
-    color: #2c3e50;
-}
-
-.user-info {
-    margin: 2rem 0;
-    padding: 1rem;
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #4c84ff;
-}
-
-.user-info p {
-    margin: 0.5rem 0;
-}
-
-.loading {
-    margin: 2rem 0;
-    text-align: center;
-    color: #666;
-}
-
-.action-cards {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-    margin: 2rem 0;
-}
-
-.card {
-    padding: 1.5rem;
-    background-color: #f8f9fa;
-    border-radius: 8px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-    cursor: pointer;
-    transition: transform 0.2s, box-shadow 0.2s;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-}
-
-.card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-}
-
-.card h3 {
-    margin-top: 0;
-    color: #2c3e50;
-    font-size: 1.25rem;
-}
-
-.card p {
-    color: #666;
-    margin-bottom: 2.5rem;
-}
-
-.card .icon {
-    position: absolute;
-    bottom: 1rem;
-    left: 0;
-    right: 0;
-    font-size: 1.5rem;
-}
-
-.logout-button {
-    padding: 0.75rem 1.5rem;
-    background-color: #e53935;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1rem;
-    margin-top: 1rem;
-    width: 100%;
-}
-
-.logout-button:hover {
-    background-color: #c62828;
-}
-</style>

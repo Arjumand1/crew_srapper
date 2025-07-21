@@ -97,7 +97,7 @@ const handleSubmit = async () => {
 <style scoped>
 .upload-container {
     max-width: 800px;
-    margin: 0 auto;
+    /* margin: 0 auto; */
     padding: 2rem;
 }
 

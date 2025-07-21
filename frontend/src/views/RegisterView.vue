@@ -1,47 +1,70 @@
 <template>
-    <div class="register-container">
-        <div class="register-form">
-            <h1>Register</h1>
-            <div v-if="authStore.error" class="error">{{ authStore.error }}</div>
-
-            <form @submit.prevent="handleRegister">
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input id="email" v-model="email" type="email" required placeholder="Enter your email" />
-                </div>
-
-                <div class="form-group">
-                    <label for="username">Username</label>
-                    <input id="username" v-model="username" type="text" required placeholder="Enter your username" />
-                </div>
-
-                <div class="form-group">
-                    <label for="name">Full Name</label>
-                    <input id="name" v-model="name" type="text" required placeholder="Enter your full name" />
-                </div>
-
-                <div class="form-group">
-                    <label for="password">Password</label>
-                    <input id="password" v-model="password" type="password" required
-                        placeholder="Enter your password" />
-                </div>
-
-                <div class="form-group">
-                    <label for="password2">Confirm Password</label>
-                    <input id="password2" v-model="password2" type="password" required
-                        placeholder="Confirm your password" />
-                </div>
-
-                <button type="submit" :disabled="authStore.loading">
-                    {{ authStore.loading ? 'Registering...' : 'Register' }}
-                </button>
-            </form>
-
-            <div class="login-link">
-                Already have an account? <router-link to="/login">Login</router-link>
-            </div>
-        </div>
-    </div>
+  <v-container class="d-flex align-center justify-center fill-height" fluid>
+    <v-card elevation="4" class="pa-6 mt-md-6 mt-4 w-lg-25 w-md-50 w-sm-75 w-100">
+      <v-card-title class="text-h4 font-weight-bold text-center">Register</v-card-title>
+      <!-- <v-alert v-if="authStore.error" type="error" class="mb-4" dense>{{ authStore.error }}</v-alert> -->
+      <v-form @submit.prevent="handleRegister">
+        <v-text-field
+          v-model="name"
+          label="Full Name"
+          type="text"
+          required
+          placeholder="Enter your full name"
+          class="mb-4"
+          autocomplete="name"
+          :rules="[v => !!v || 'Full name is required']"
+          :disabled="authStore.loading"
+        />
+        <v-text-field
+          v-model="email"
+          label="Email"
+          type="email"
+          required
+          placeholder="Enter your email"
+          class="mb-4 mt-8"
+          autocomplete="email"
+          :rules="[v => !!v || 'Email is required', v => /.+@.+\..+/.test(v) || 'E-mail must be valid']"
+          :disabled="authStore.loading"
+        />
+        <v-text-field
+          v-model="password"
+          label="Password"
+          type="password"
+          required
+          placeholder="Enter your password"
+          class="mb-4"
+          autocomplete="new-password"
+          :rules="[v => !!v || 'Password is required', v => v.length >= 8 || 'Password must be at least 8 characters']"
+          :disabled="authStore.loading"
+        />
+        <v-text-field
+          v-model="password2"
+          label="Confirm Password"
+          type="password"
+          required
+          placeholder="Confirm your password"
+          class="mb-4"
+          autocomplete="new-password"
+          :rules="[v => !!v || 'Confirmation is required', v => v === password || 'Passwords must match']"
+          :disabled="authStore.loading"
+        />
+        <v-btn
+          type="submit"
+          :loading="authStore.loading"
+          :disabled="authStore.loading"
+          color="primary"
+          block
+          class="mt-2 font-weight-bold"
+        >
+          Register
+        </v-btn>
+      </v-form>
+      <div class="text-center mt-6">
+        <span>Already have an account?</span>
+        <router-link to="/login" class="text-primary ms-1">Login</router-link>
+      </div>
+    </v-card>
+  </v-container>
 </template>
 
 <script setup lang="ts">
@@ -77,98 +100,10 @@ const handleRegister = async () => {
 }
 </script>
 
-<style scoped>
-.register-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 100vh;
-    padding: 2rem 0;
-    background-color: #f5f5f5;
+<style>
+.v-messages__message{
+  text-align: left !important;
+  font-size: 14px;
 }
 
-.register-form {
-    width: 100%;
-    max-width: 400px;
-    padding: 2rem;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-}
-
-h1 {
-    margin-bottom: 1.5rem;
-    text-align: center;
-    color: #2c3e50;
-}
-
-.form-group {
-    margin-bottom: 1rem;
-}
-
-label {
-    display: block;
-    margin-bottom: 0.5rem;
-    font-weight: 500;
-}
-
-input {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 16px;
-    transition: border-color 0.2s;
-}
-
-input:focus {
-    outline: none;
-    border-color: #4c84ff;
-}
-
-button {
-    width: 100%;
-    padding: 0.75rem;
-    margin-top: 1rem;
-    background-color: #4c84ff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    font-size: 16px;
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-button:hover {
-    background-color: #3a70e0;
-}
-
-button:disabled {
-    background-color: #a0a0a0;
-    cursor: not-allowed;
-}
-
-.error {
-    margin-bottom: 1rem;
-    padding: 0.5rem;
-    background-color: #ffebee;
-    color: #d32f2f;
-    border-radius: 4px;
-    font-size: 14px;
-}
-
-.login-link {
-    margin-top: 1.5rem;
-    text-align: center;
-    font-size: 14px;
-}
-
-.login-link a {
-    color: #4c84ff;
-    text-decoration: none;
-}
-
-.login-link a:hover {
-    text-decoration: underline;
-}
 </style>

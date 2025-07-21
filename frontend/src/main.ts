@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import router from './router'
 import './style.css'
+import vuetify from './plugins/vuetify'
 
 // Create the app and Pinia instance
 const app = createApp(App)
@@ -13,6 +14,8 @@ app.use(pinia)
 
 // Then install router
 app.use(router)
+
+app.use(vuetify)
 
 // Mount the app
 app.mount('#app')
