@@ -202,7 +202,7 @@ For unclear text, use "uncertain": true flag. Include ALL rows even if partially
 
         # Track attempt count for retries
         attempt = 1
-        max_attempts = 3
+        max_attempts = 2
         backoff_factor = 2  # For exponential backoff
 
         while attempt <= max_attempts:

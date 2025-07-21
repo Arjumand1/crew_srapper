@@ -6,7 +6,12 @@ from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 
 from .models import CrewSheet
-from .serializers import CrewSheetSerializer, CrewSheetUploadSerializer, CrewSheetListSerializer, CrewSheetUpdateSerializer
+from .serializers import (
+    CrewSheetSerializer,
+    CrewSheetUploadSerializer,
+    CrewSheetListSerializer,
+    CrewSheetUpdateSerializer,
+)
 from .services import CrewSheetProcessor
 
 # Create your views here.
@@ -49,7 +54,7 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
         # Allow processing only if in pending or failed state
         if crew_sheet.status not in ['pending', 'failed']:
             return Response(
-                {'detail': f'Cannot process crew sheet in {crew_sheet.status} state'}, 
+                {'detail': f'Cannot process crew sheet in {crew_sheet.status} state'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -70,10 +75,10 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
             # Get the updated sheet with error info
             crew_sheet.refresh_from_db()
             error_message = crew_sheet.error_message or "Unknown error occurred during processing"
-            
+
             # Return error details for debugging
             return Response({
-                'status': 'processing failed', 
+                'status': 'processing failed',
                 'error': error_message,
                 'sheet_id': str(crew_sheet.id),
                 'debug_info': {
