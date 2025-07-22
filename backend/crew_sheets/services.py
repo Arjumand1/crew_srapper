@@ -153,35 +153,80 @@ class OpenAIService:
         messages = [
             {
                 "role": "system",
-                "content": """Extract all data from this crew sheet with exact precision:
+                "content": """You are an expert at extracting data from crew/timesheets. These sheets track WHO (crew/people) does WHAT (task) WHERE (cost center), for HOW LONG (hours), and HOW FAST (pieces).
 
-1. Extract ALL table headers exactly as written
-2. Extract EVERY employee row with ALL cell data
-3. Include sheet date, metadata, and any notes
-4. Maintain the EXACT table structure
+CRITICAL ANALYSIS STEPS:
+1. FIRST: Study the sheet layout carefully - identify the table structure, nested headers, and data organization
+2. SECOND: Map out all headers including parent-child relationships
+3. THIRD: Identify cost centers and tasks within the table structure
+4. FOURTH: Extract data with precise column matching
 
-Format as JSON:
+NESTED HEADER RULES (VERY IMPORTANT):
+- Look for headers that span multiple columns with sub-headers below
+- Examples:
+  * "START" header with only "IN" column below → "START_IN"
+  * "BREAK 1" header with "OUT" and "IN" columns below → "BREAK1_OUT", "BREAK1_IN"
+  * "LUNCH" header with "OUT" and "IN" columns below → "LUNCH_OUT", "LUNCH_IN"
+  * "BREAK 2" header with "OUT" and "IN" columns below → "BREAK2_OUT", "BREAK2_IN"
+- NEVER use just "START", "BREAK 1", "LUNCH" if they have sub-columns
+- Always include the sub-column identifier in the header name
+
+COST CENTER & TASK HANDLING:
+- Cost centers and tasks are often integrated into the main table structure
+- Look for patterns like "JOB NO. HRS." and "JOB NO. PIECE WORK" columns
+- These often repeat for different cost centers/tasks
+- Number them sequentially: "JOB_NO_HRS_1", "JOB_NO_PIECE_WORK_1", "JOB_NO_HRS_2", "JOB_NO_PIECE_WORK_2", etc.
+- Extract the actual cost center and task values from the sheet context
+
+DATA PLACEMENT ACCURACY:
+- Time values (like "6:05", "8:30", "11:00") must go in the correct nested column
+- "✓" marks indicate presence/completion in that specific column
+- Empty cells should remain empty, not filled with "✓" unless actually marked
+- Each piece of data must match its exact column position
+
+EXTRACTION PROCESS:
+1. Identify the complete table structure including all nested headers
+2. Create proper header names that reflect the nested structure
+3. Extract cost centers and tasks from sheet context or embedded locations
+4. Map each data cell to its correct header with precision
+5. Capture all metadata and additional information
+
+OUTPUT FORMAT:
 {
-  "date": "sheet date",
+  "date": "extracted date",
   "valid": true,
   "metadata": {
-    "hours": "total hours if present",
-    "employees": "employee count if present",
+    "sheet_title": "title if present",
+    "total_hours": "if calculated on sheet",
+    "employee_count": "number of employees",
+    "supervisor": "supervisor name if present",
+    "department": "department if present",
+    "project": "project info if present",
+    "cost_centers": ["all cost centers found"],
+    "tasks": ["all task codes/descriptions found"],
+    "notes": "any additional notes or information",
     "sheet_number": "sheet number if present"
   },
-  "table_headers": ["Header1", "Header2", ...],
+  "table_headers": ["EMPLOYEE_NAME", "START_IN", "BREAK1_OUT", "BREAK1_IN", "LUNCH_OUT", "LUNCH_IN", "BREAK2_OUT", "BREAK2_IN", "STOP", "JOB_NO_HRS_1", "JOB_NO_PIECE_WORK_1", "JOB_NO_HRS_2", "JOB_NO_PIECE_WORK_2", "TOTAL_HRS"],
   "employees": [
     {
       "name": "Employee Name",
-      "header1": "value1",
-      "header2": "value2",
-      ...
-    },
-    ...
+      "START_IN": "actual time or ✓",
+      "BREAK1_OUT": "actual time or ✓",
+      "BREAK1_IN": "actual time or ✓",
+      "LUNCH_OUT": "actual time or ✓",
+      "LUNCH_IN": "actual time or ✓",
+      "BREAK2_OUT": "actual time or ✓",
+      "BREAK2_IN": "actual time or ✓",
+      "STOP": "actual time or ✓",
+      "JOB_NO_HRS_1": "hours for job 1",
+      "JOB_NO_PIECE_WORK_1": "pieces for job 1",
+      "TOTAL_HRS": "total hours"
+    }
   ]
 }
 
-For unclear text, use "uncertain": true flag. Include ALL rows even if partially filled."""
+CRITICAL: Study the image carefully before extracting. Look at the actual column structure, not just the main headers. Each time value must go in the correct nested column."""
             },
             {
                 "role": "user",

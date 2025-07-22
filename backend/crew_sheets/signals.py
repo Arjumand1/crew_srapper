@@ -4,6 +4,7 @@ import os
 
 from .models import CrewSheet
 
+
 @receiver(post_delete, sender=CrewSheet)
 def delete_crew_sheet_image(sender, instance, **kwargs):
     """Delete the image file when a CrewSheet instance is deleted."""

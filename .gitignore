@@ -55,3 +55,6 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+
+*.package-lock.json
+*.yarn.lock

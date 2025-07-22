@@ -62,7 +62,7 @@
         variant="tonal"
       >
         No crew sheets found. Upload your first crew sheet to get started!
-        <v-btn color="primary" class="ml-4" @click="navigateToUpload"
+        <v-btn color="primary" class="ml-4 mt-2" @click="navigateToUpload"
           >Upload Crew Sheet</v-btn
         >
       </v-alert>
