@@ -97,14 +97,14 @@
                 <tr>
                   <th class="text-center" style="min-width: 60px;">ID</th>
                   <th v-for="(header, index) in headers" :key="'header-th-' + index + '-' + headerEditKey"
-                    class="text-center" style="min-width: 160px;">
+                    class="text-center" style="min-width: 160px; white-space: pre-line;">
                     <template v-if="editingHeaders">
                       <v-text-field :model-value="headers[index]"
                         @update:model-value="handleHeaderRename(index, $event)" density="compact" hide-details
                         class="w-75 mx-auto" :ref="setHeaderInputRef(index)"
                         :key="'header-input-' + index + '-' + headerEditKey">
                         <template #append-inner>
-                          <v-btn v-if="header !== 'EMPLOYEE NAME'" icon size="x-small" color="error"
+                          <v-btn v-if="!isEmployeeNameHeader(header)" icon size="x-small" color="error"
                             @click.stop="removeHeader(index)" tabindex="-1" style="height: 16px; width: 16px;">
                             <v-icon>mdi-close</v-icon>
                           </v-btn>
@@ -113,7 +113,7 @@
                     </template>
                     <template v-else>
                       <span @click="sortTable(header)" class="cursor-pointer">
-                        {{ header }}
+                        {{ formatHeaderForDisplay(header) }}
                         <v-icon v-if="sortColumn === header" size="x-small">
                           {{ sortDirection === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down' }}
                         </v-icon>
@@ -134,11 +134,11 @@
                 <tr v-for="(employee, rowIndex) in sortedEmployees" :key="rowIndex">
                   <td class="text-center font-weight-bold" style="min-width: 60px;">{{ rowIndex + 1 }}</td>
                   <td v-for="header in headers" :key="`${rowIndex}-${header}`" style="min-width: 160px;">
-                    <v-text-field v-model="employee[header === 'EMPLOYEE NAME' || header === 'EMPLOYEE_NAME' ? 'name' : header]" density="compact"
+                    <v-text-field v-model="employee[isEmployeeNameHeader(header) ? 'name' : header]" density="compact"
                       hide-details :class="{
                         'bg-yellow-lighten-4': isUncertain(employee, header),
-                        'bg-blue-lighten-4': employee._edited && employee._edited.includes(header === 'EMPLOYEE NAME' || header === 'EMPLOYEE_NAME' ? 'name' : header),
-                        'font-weight-bold': header === 'EMPLOYEE NAME' || header === 'EMPLOYEE_NAME',
+                        'bg-blue-lighten-4': employee._edited && employee._edited.includes(isEmployeeNameHeader(header) ? 'name' : header),
+                        'font-weight-bold': isEmployeeNameHeader(header),
                       }" @input="handleCellInput(rowIndex, header)" />
                   </td>
                   <td class="text-center" style="min-width: 100px;">
@@ -166,6 +166,90 @@ function formatLabel(label: string) {
   return label
     .replace(/_/g, ' ')
     .replace(/\b\w/g, l => l.toUpperCase());
+}
+
+function isEmployeeNameHeader(header) {
+  if (!header) return false;
+  const normalized = header.toString().toLowerCase().replace(/[_\s]/g, '');
+  return normalized === 'employeename' || normalized === 'name' || normalized === 'employee';
+}
+
+function parseHierarchicalHeader(header) {
+  if (!header || typeof header !== 'string') return { costCenter: null, task: null, jobType: header };
+  
+  // Common job-related keywords that indicate job type part of the header
+  const jobKeywords = ['JOB', 'PIECE', 'WORK', 'HRS', 'HOURS', 'NO', 'PCS'];
+  const parts = header.split('_');
+  
+  // If header is too short, treat it as a simple header
+  if (parts.length < 3) {
+    return { costCenter: null, task: null, jobType: header.replace(/_/g, ' ') };
+  }
+  
+  // Find where job type starts in the header
+  let jobTypeStartIndex = -1;
+  for (let i = 0; i < parts.length; i++) {
+    if (jobKeywords.includes(parts[i])) {
+      jobTypeStartIndex = i;
+      break;
+    }
+  }
+  
+  // If no job keywords found, use a default split (first=costCenter, middle=task, rest=jobType)
+  if (jobTypeStartIndex === -1) {
+    // Default to treating first part as cost center, second as task, rest as job type if 3+ parts
+    if (parts.length >= 3) {
+      return {
+        costCenter: parts[0],
+        task: parts[1],
+        jobType: parts.slice(2).join(' ')
+      };
+    } else if (parts.length === 2) {
+      return {
+        costCenter: parts[0],
+        task: null,
+        jobType: parts[1]
+      };
+    } else {
+      return { costCenter: null, task: null, jobType: header.replace(/_/g, ' ') };
+    }
+  }
+  
+  // Extract cost center, task, and job type based on found index
+  const costCenter = parts[0] || null;
+  const task = jobTypeStartIndex > 1 ? parts.slice(1, jobTypeStartIndex).join(' ') : null;
+  const jobType = parts.slice(jobTypeStartIndex).join(' ');
+  
+  return { costCenter, task, jobType };
+}
+
+function formatHeaderForDisplay(header) {
+  if (!header) return '';
+  
+  // Handle employee name headers specially
+  if (isEmployeeNameHeader(header)) {
+    return 'EMPLOYEE NAME';
+  }
+  
+  // Parse hierarchical structure
+  const { costCenter, task, jobType } = parseHierarchicalHeader(header);
+  
+  // Build multi-line display with cost center on top, task in middle, job type at bottom
+  let displayText = '';
+  
+  if (costCenter) {
+    displayText += costCenter;
+  }
+  
+  if (task) {
+    displayText += (displayText ? '\n' : '') + task;
+  }
+  
+  if (jobType) {
+    displayText += (displayText ? '\n' : '') + jobType;
+  }
+  
+  return displayText || header.replace(/_/g, ' ');
 }
 
 const router = useRouter();
@@ -214,7 +298,6 @@ function setHeaderInputRef(index: number) {
     headerInputRefs.value[index] = el;
   };
 }
-
 
 // Load data from backend
 async function loadSheet() {
@@ -334,10 +417,7 @@ async function saveChanges() {
   }
 }
 
-
 import * as XLSX from 'xlsx';
-
-
 
 // Get the current crew sheet
 const currentSheet = computed(() => {
@@ -346,7 +426,6 @@ const currentSheet = computed(() => {
 
 const sortColumn = ref('');
 const sortDirection = ref('asc');
-
 
 // Sort function for the table
 const sortTable = (header: string) => {
@@ -403,62 +482,61 @@ const downloadExcel = () => {
   }
 
   try {
-    // Defensive: check XLSX
-    if (typeof XLSX === 'undefined' || !XLSX.utils) {
-      alert('Excel export library not loaded');
-      return;
-    }
+    // Create a workbook
+    const wb = XLSX.utils.book_new();
 
-    // Create a new workbook
-    const workbook = XLSX.utils.book_new();
-
-    // Table worksheet
-    const wsData: any[][] = [];
-    const visibleHeaders = headers.value.filter(header => header !== 'Actions');
-    wsData.push(visibleHeaders);
-    rows.value.forEach((employee: any) => {
-      const row: any[] = [];
-      visibleHeaders.forEach((header) => {
-        let cellValue = '';
-        if (header === 'EMPLOYEE NAME' || header === 'Employee Name' || header === 'NAME') {
-          cellValue = employee[header] || employee.name || employee.EMPLOYEE_NAME || employee.employee_name || employee['EMPLOYEE NAME'] || '';
-        } else {
-          cellValue = employee[header] || '';
+    // Create sheet for employee data
+    const employeeData = rows.value.map(employee => {
+      const row = {};
+      
+      // Always add employee name (ensuring it's never empty)
+      row['EMPLOYEE NAME'] = employee.name || '';
+      
+      // Add all other headers
+      headers.value.forEach(header => {
+        if (!isEmployeeNameHeader(header)) {
+          // Format header for Excel display - replace newlines with spaces for readability
+          const displayHeader = formatHeaderForDisplay(header).replace(/\n/g, ' - ');
+          row[displayHeader] = employee[header] || '';
         }
-        if (employee.uncertain && employee.uncertain[header]) {
-          cellValue += ' (uncertain)';
-        }
-        row.push(cellValue);
       });
-      wsData.push(row);
+      
+      return row;
     });
-    const worksheet = XLSX.utils.aoa_to_sheet(wsData);
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Crew Sheet Data');
 
-    // Sheet Information worksheet
+    const ws = XLSX.utils.json_to_sheet(employeeData);
+    XLSX.utils.book_append_sheet(wb, ws, 'Employees');
+
+    // Add metadata sheet if available
     if (headerInfo.value && typeof headerInfo.value === 'object' && Object.keys(headerInfo.value).length > 0) {
-      const headerRows = Object.entries(headerInfo.value).map(([k, v]) => [formatLabel(String(k)), v]);
-      const headerSheet = XLSX.utils.aoa_to_sheet([
-        ['Sheet Info Field', 'Value'],
-        ...headerRows
-      ]);
-      XLSX.utils.book_append_sheet(workbook, headerSheet, 'Sheet Information');
+      const metadataEntries = Object.entries(headerInfo.value).map(([key, value]) => {
+        return { Key: key.replace(/_/g, ' ').toUpperCase(), Value: value || '' };
+      });
+      
+      if (metadataEntries.length > 0) {
+        const metadataSheet = XLSX.utils.json_to_sheet(metadataEntries);
+        XLSX.utils.book_append_sheet(wb, metadataSheet, 'Metadata');
+      }
     }
 
-    // Summary worksheet
+    // Add summary sheet if available
     if (summaryInfo.value && typeof summaryInfo.value === 'object' && Object.keys(summaryInfo.value).length > 0) {
-      const summaryRows = Object.entries(summaryInfo.value).map(([k, v]) => [formatLabel(String(k)), v]);
-      const summarySheet = XLSX.utils.aoa_to_sheet([
-        ['Summary Field', 'Value'],
-        ...summaryRows
-      ]);
-      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Summary');
+      const summaryEntries = Object.entries(summaryInfo.value).map(([key, value]) => {
+        return { Key: key.replace(/_/g, ' ').toUpperCase(), Value: value || '' };
+      });
+      
+      if (summaryEntries.length > 0) {
+        const summarySheet = XLSX.utils.json_to_sheet(summaryEntries);
+        XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
+      }
     }
 
-    // Generate Excel file
-    const sheetName = currentSheet.value?.name || `crew_sheet_${sheetId.value}`;
-    const fileName = `${sheetName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    // Generate filename with date
+    const date = new Date().toISOString().split('T')[0];
+    const fileName = `crew_sheet_${date}.xlsx`;
+
+    // Write and download
+    XLSX.writeFile(wb, fileName);
   } catch (error) {
     console.error('Error generating Excel:', error);
     alert('Error generating Excel file');
@@ -580,69 +658,51 @@ const canDownload = computed(() => {
   return currentSheet.value?.status === 'completed' && rows.value.length > 0;
 });
 
-
-
 const isUncertain = (employee: any, header: string) => {
-  // Map EMPLOYEE NAME header to name field
-  const fieldName = header === 'EMPLOYEE NAME' ? 'name' : header;
-
-  // Check if the field is explicitly marked as uncertain
-  if (employee.uncertain && Array.isArray(employee.uncertain) && employee.uncertain.includes(fieldName)) {
+  if (!employee || !employee._uncertain) return false;
+  
+  // Map header to field name
+  const fieldName = isEmployeeNameHeader(header) ? 'name' : header;
+  
+  // Check if field is in uncertain array
+  if (Array.isArray(employee._uncertain) && employee._uncertain.includes(fieldName)) {
     return true;
   }
-
-  // Check if the field is uncertain in object format
-  const value = employee[fieldName];
-  if (typeof value === 'object' && value !== null) {
-    if ('uncertain' in value && value.uncertain) {
-      return true;
-    }
-    if ('confidence' in value && value.confidence < 0.8) {
-      return true;
-    }
-  }
-
-  // Check if the string value contains uncertainty indicators
-  if (typeof value === 'string') {
-    const lowerValue = value.toLowerCase();
-    if (lowerValue.includes('*') ||
-      lowerValue.includes('?') ||
-      lowerValue.includes('uncertain') ||
-      lowerValue.includes('unclear')) {
-      return true;
-    }
-  }
-
+  
   return false;
 };
 
 // Get value for a cell, handling special cases
 const getCellValue = (employee: any, header: string) => {
-  // Map EMPLOYEE NAME header to name field
-  const fieldName = header === 'EMPLOYEE NAME' ? 'name' : header;
-
+  if (!employee) return '';
+  
+  // Map header to field name
+  const fieldName = isEmployeeNameHeader(header) ? 'name' : header;
+  
+  // Get the value
   const value = employee[fieldName];
-
-  // Handle null values
+  
+  // Handle missing values
   if (value === null || value === undefined) return '';
-
-  // Handle object format with value property
-  if (typeof value === 'object' && value !== null && 'value' in value) {
-    return value.value || '';
+  
+  // Handle object values (from AI extraction)
+  if (typeof value === 'object' && value !== null) {
+    if ('value' in value) return value.value || '';
+    if ('text' in value) return value.text || '';
   }
-
-  // Special handling for checkmarks
-  if (value === true || value === 'true' || value === '✓' || value === 'X' || value === 'x') {
+  
+  // Handle checkmarks
+  if (value === true || value === 'true' || value === '✓') {
     return '✓';
   }
-
-  return value;
+  
+  return String(value);
 };
 
 // Handle cell input
 const handleCellInput = (rowIndex: number, header: string) => {
   // Map EMPLOYEE NAME to name field
-  const fieldName = header === 'EMPLOYEE NAME' ? 'name' : header;
+  const fieldName = isEmployeeNameHeader(header) ? 'name' : header;
 
   // Mark as edited
   isEdited.value = true;

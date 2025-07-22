@@ -156,10 +156,20 @@ class OpenAIService:
                 "content": """You are an expert at extracting data from crew/timesheets. These sheets track WHO (crew/people) does WHAT (task) WHERE (cost center), for HOW LONG (hours), and HOW FAST (pieces).
 
 CRITICAL ANALYSIS STEPS:
-1. FIRST: Study the sheet layout carefully - identify the table structure, nested headers, and data organization
-2. SECOND: Map out all headers including parent-child relationships
-3. THIRD: Identify cost centers and tasks within the table structure
+1. FIRST: Study the sheet layout carefully - identify the table structure, hierarchical headers, and data organization
+2. SECOND: Map out ALL headers including multi-level hierarchical relationships (cost centers → tasks → job columns)
+3. THIRD: Identify how cost centers and tasks relate to job columns in the header structure
 4. FOURTH: Extract data with precise column matching
+
+HIERARCHICAL HEADER STRUCTURE (VERY IMPORTANT):
+- Many crew sheets use a THREE-LEVEL HIERARCHY in their headers:
+  * TOP LEVEL: Cost Centers (e.g., "KW13", "270", "CMA")
+  * MIDDLE LEVEL: Tasks (e.g., "zero", "socker", "irrigation")
+  * BOTTOM LEVEL: Job columns (e.g., "Job No Hrs", "Job Piece Work")
+- CAPTURE THIS HIERARCHY in your column naming using this format: COST_CENTER_TASK_JOBTYPE
+  * Example: "KW13_ZERO_JOB_NO_HRS" where KW13 is cost center, ZERO is task, JOB_NO_HRS is job type
+  * If cost center or task is missing, use format: TASK_JOBTYPE or JOBTYPE as appropriate
+- CONSISTENTLY APPLY this hierarchy across all similar columns
 
 NESTED HEADER RULES (VERY IMPORTANT):
 - Look for headers that span multiple columns with sub-headers below
@@ -172,61 +182,68 @@ NESTED HEADER RULES (VERY IMPORTANT):
 - Always include the sub-column identifier in the header name
 
 COST CENTER & TASK HANDLING:
-- Cost centers and tasks are often integrated into the main table structure
-- Look for patterns like "JOB NO. HRS." and "JOB NO. PIECE WORK" columns
-- These often repeat for different cost centers/tasks
-- Number them sequentially: "JOB_NO_HRS_1", "JOB_NO_PIECE_WORK_1", "JOB_NO_HRS_2", "JOB_NO_PIECE_WORK_2", etc.
-- Extract the actual cost center and task values from the sheet context
+- Cost centers and tasks are often PART OF THE HEADER HIERARCHY, not separate metadata
+- They typically appear ABOVE the job columns in the header structure
+- Create headers that reflect this relationship: COST_CENTER_TASK_JOB_TYPE
+- Number them sequentially only if needed for uniqueness: "KW13_ZERO_JOB_NO_HRS_1", "KW13_SOCKER_JOB_NO_HRS_1"
+- INCLUDE the cost center and task values directly in the header names, not just in metadata
 
 DATA PLACEMENT ACCURACY:
-- Time values (like "6:05", "8:30", "11:00") must go in the correct nested column
-- "✓" marks indicate presence/completion in that specific column
-- Empty cells should remain empty, not filled with "✓" unless actually marked
-- Each piece of data must match its exact column position
+- Match data values to the CORRECT hierarchical columns
+- Time values must go in precise columns (START_IN, BREAK1_OUT, etc.)
+- Job data must go in the corresponding hierarchical columns (COST_CENTER_TASK_JOB_TYPE)
+- Only use placeholder marks ("✓") if actually present in original
+- Extract actual numeric and text values whenever present
 
 EXTRACTION PROCESS:
-1. Identify the complete table structure including all nested headers
-2. Create proper header names that reflect the nested structure
-3. Extract cost centers and tasks from sheet context or embedded locations
-4. Map each data cell to its correct header with precision
-5. Capture all metadata and additional information
+1. Scan the ENTIRE sheet first, noting the header structure and hierarchy
+2. Map ALL headers, preserving hierarchical relationships
+3. Extract employee data row by row
+4. Ensure data aligns with the correct hierarchical headers
+5. Capture metadata like date, supervisor, sheet title from outside the main table
 
 OUTPUT FORMAT:
 {
-  "date": "extracted date",
-  "valid": true,
+  "date": "6-23-25",
+  "valid": true, 
   "metadata": {
-    "sheet_title": "title if present",
-    "total_hours": "if calculated on sheet",
-    "employee_count": "number of employees",
-    "supervisor": "supervisor name if present",
-    "department": "department if present",
-    "project": "project info if present",
-    "cost_centers": ["all cost centers found"],
-    "tasks": ["all task codes/descriptions found"],
-    "notes": "any additional notes or information",
-    "sheet_number": "sheet number if present"
+    "notes": "Any notes found on the sheet",
+    "supervisor": "Name if found",
+    "sheet_title": "Title if present",
+    "total_hours": "182.5",
+    "employee_count": "23",
+    "sheet_number": "Any ID/number found"
   },
-  "table_headers": ["EMPLOYEE_NAME", "START_IN", "BREAK1_OUT", "BREAK1_IN", "LUNCH_OUT", "LUNCH_IN", "BREAK2_OUT", "BREAK2_IN", "STOP", "JOB_NO_HRS_1", "JOB_NO_PIECE_WORK_1", "JOB_NO_HRS_2", "JOB_NO_PIECE_WORK_2", "TOTAL_HRS"],
   "employees": [
     {
-      "name": "Employee Name",
-      "START_IN": "actual time or ✓",
-      "BREAK1_OUT": "actual time or ✓",
-      "BREAK1_IN": "actual time or ✓",
-      "LUNCH_OUT": "actual time or ✓",
-      "LUNCH_IN": "actual time or ✓",
-      "BREAK2_OUT": "actual time or ✓",
-      "BREAK2_IN": "actual time or ✓",
-      "STOP": "actual time or ✓",
-      "JOB_NO_HRS_1": "hours for job 1",
-      "JOB_NO_PIECE_WORK_1": "pieces for job 1",
-      "TOTAL_HRS": "total hours"
-    }
+      "name": "John Smith",
+      "START_IN": "6:00",
+      "BREAK1_OUT": "8:30",
+      "BREAK1_IN": "9:00",
+      "LUNCH_OUT": "11:30", 
+      "LUNCH_IN": "12:00",
+      "KW13_ZERO_JOB_NO_HRS": "2",
+      "KW13_ZERO_JOB_PIECE_WORK": "9",
+      "KW13_SOCKER_JOB_NO_HRS": "1.5", 
+      "TOTAL_HRS": "8"
+    },
+    // Additional employee records...
+  ],
+  "table_headers": [
+    "EMPLOYEE_NAME",
+    "START_IN",
+    "BREAK1_OUT", 
+    "BREAK1_IN",
+    "LUNCH_OUT", 
+    "LUNCH_IN",
+    "KW13_ZERO_JOB_NO_HRS",
+    "KW13_ZERO_JOB_PIECE_WORK",
+    "KW13_SOCKER_JOB_NO_HRS",
+    "TOTAL_HRS"
   ]
 }
 
-CRITICAL: Study the image carefully before extracting. Look at the actual column structure, not just the main headers. Each time value must go in the correct nested column."""
+Remember: correctly identify and preserve ALL hierarchical relationships in the header structure, and extract data into this precise structure."""
             },
             {
                 "role": "user",
