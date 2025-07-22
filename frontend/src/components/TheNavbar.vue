@@ -1,6 +1,6 @@
 <template>
   <div>
-    <v-app-bar color="primary" class="elevation-2 px-4" dark flat app>
+    <v-app-bar color="primary" class="elevation-2 px-4 px-md-12" dark flat app>
       <!-- Hamburger menu button: only on sm and down -->
       <v-btn icon class="me-2 d-flex d-sm-none" @click="drawer = true">
         <v-icon>mdi-menu</v-icon>
