@@ -134,11 +134,11 @@
                 <tr v-for="(employee, rowIndex) in sortedEmployees" :key="rowIndex">
                   <td class="text-center font-weight-bold" style="min-width: 60px;">{{ rowIndex + 1 }}</td>
                   <td v-for="header in headers" :key="`${rowIndex}-${header}`" style="min-width: 160px;">
-                    <v-text-field v-model="employee[header === 'EMPLOYEE NAME' ? 'name' : header]" density="compact"
+                    <v-text-field v-model="employee[header === 'EMPLOYEE NAME' || header === 'EMPLOYEE_NAME' ? 'name' : header]" density="compact"
                       hide-details :class="{
                         'bg-yellow-lighten-4': isUncertain(employee, header),
-                        'bg-blue-lighten-4': employee._edited && employee._edited.includes(header === 'EMPLOYEE NAME' ? 'name' : header),
-                        'font-weight-bold': header === 'EMPLOYEE NAME',
+                        'bg-blue-lighten-4': employee._edited && employee._edited.includes(header === 'EMPLOYEE NAME' || header === 'EMPLOYEE_NAME' ? 'name' : header),
+                        'font-weight-bold': header === 'EMPLOYEE NAME' || header === 'EMPLOYEE_NAME',
                       }" @input="handleCellInput(rowIndex, header)" />
                   </td>
                   <td class="text-center" style="min-width: 100px;">
