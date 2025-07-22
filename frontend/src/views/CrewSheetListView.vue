@@ -1,11 +1,11 @@
 <template>
-  <v-container class="d-flex align-center justify-center fill-height" fluid>
-    <v-card class="pa-8 elevation-3 mt-lg-8 mt-sm-6 mt-4 w-lg-50 w-md-75 w-100">
+  <v-container class="d-flex align-center text-center justify-center fill-height" fluid>
+    <v-card class="pa-8 text-center elevation-3 mt-lg-8 mt-sm-6 mt-4 w-lg-50 w-md-75 w-100">
       <v-row class="align-center mb-4">
-        <v-col cols="12" md="6">
-          <div class="text-h4 font-weight-bold">Crew Sheets</div>
+        <v-col cols="12" md="6" >
+          <div class="text-h4 text-sm-left">Crew Sheets</div>
         </v-col>
-        <v-col cols="12" md="6" class="d-flex justify-end">
+        <v-col cols="12" md="6" class="d-flex justify-center justify-sm-end">
           <v-btn
             color="primary"
             @click="navigateToUpload"
@@ -17,13 +17,13 @@
       </v-row>
 
       <v-row class="mb-4">
-        <v-col cols="12" class="d-flex justify-end">
-          <v-btn-toggle v-model="viewMode" mandatory>
+        <v-col cols="12" class="d-flex justify-center justify-sm-end">
+          <v-btn-toggle v-model="viewMode" color="secondary" mandatory>
             <v-btn
               value="grid"
               :variant="viewMode === 'grid' ? 'flat' : 'text'"
             >
-              <v-icon>mdi-view-grid</v-icon> Grid View
+              <v-icon icon="mdi-view-grid" /> Grid View
             </v-btn>
             <v-btn
               value="table"
@@ -100,17 +100,15 @@
             <v-card-title class="text-h6 mt-2">{{
               sheet.name || `Crew Sheet #${sheet.id}`
             }}</v-card-title>
-            <v-card-subtitle class="text-caption"
-              >Uploaded: {{ formatDate(sheet.date_uploaded) }}</v-card-subtitle
+            <div class="text-caption mx-2"
+              >Uploaded: {{ formatDate(sheet.date_uploaded) }}</div
             >
-            <v-card-text class="d-flex align-center justify-space-between mt-2">
-              <v-chip
-                :color="statusColor(sheet.status)"
-                class="text-uppercase"
-                size="small"
-                >{{ sheet.status }}</v-chip
-              >
-            </v-card-text>
+            <v-chip
+              :color="statusColor(sheet.status)"
+              class="text-uppercase mx-auto my-2"
+              size="small"
+              >{{ sheet.status }}</v-chip
+            >
           </v-card>
         </v-col>
       </v-row>
@@ -118,8 +116,10 @@
       <!-- Table View -->
       <v-table
         v-if="crewSheets.length > 0 && viewMode === 'table'"
-        class="mt-6"
+        class="mt-6 text-left"
         density="comfortable"
+        fixed-header
+        
       >
         <thead>
           <tr>
@@ -139,7 +139,7 @@
                 height="60"
                 width="60"
                 cover
-                class="rounded"
+                class="rounded my-2"
               />
             </td>
             <td>{{ sheet.name || `Crew Sheet #${sheet.id}` }}</td>
@@ -159,11 +159,12 @@
                 @click.stop="viewSheet(sheet.id)"
                 >View</v-btn
               >
+              <br>
               <v-btn
                 v-if="sheet.status === 'pending'"
                 size="small"
                 color="success"
-                class="ml-2"
+                class="mt-1"
                 @click.stop="processSheet(sheet.id)"
                 >Process</v-btn
               >

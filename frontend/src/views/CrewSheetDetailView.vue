@@ -1,176 +1,178 @@
 <template>
-    <div class="crew-sheet-detail">
-        <div class="header">
-            <h1>{{ currentSheet?.name || 'Crew Sheet Details' }}</h1>
-            <div class="status-badge" :class="statusClass">
-                {{ currentSheet?.status }}
-            </div>
+  <v-container class="py-8 w-lg-75 w-100" fluid>
+    <v-row class="mb-6 align-center justify-space-between">
+      <v-col cols="12" md="8">
+        <div class="d-flex align-center gap-4">
+          <v-icon size="x-large" color="primary">mdi-file-document-outline</v-icon>
+          <span class="text-h4 font-weight-bold">{{ currentSheet?.name || 'Crew Sheet Details' }}</span>
         </div>
+      </v-col>
+      <v-col cols="12" md="4" class="d-flex justify-end align-center">
+        <v-chip :color="statusColor(currentSheet?.status)" class="text-uppercase" size="large">
+          {{ currentSheet?.status }}
+        </v-chip>
+      </v-col>
+    </v-row>
 
-        <div v-if="loading" class="loading">
-            Loading crew sheet data...
-        </div>
+    <v-alert v-if="loading" type="info" class="mb-4" border="start" variant="tonal">
+      Loading crew sheet data...
+    </v-alert>
+    <v-alert v-if="error" type="error" class="mb-4" border="start" variant="tonal">
+      {{ error }}
+    </v-alert>
 
-        <div v-if="error" class="error-message">
-            {{ error }}
-        </div>
-
-        <div v-if="currentSheet && !loading" class="crew-sheet-container">
-            <!-- Processing Error -->
-            <div v-if="currentSheet.status === 'failed'" class="error-container">
-                <h3>Processing Error</h3>
-                <p>{{ currentSheet.error_message }}</p>
-                <button @click="processCrewSheet" class="btn-retry" :disabled="processing">
-                    {{ processing ? 'Retrying...' : 'Retry Processing' }}
-                </button>
+    <v-row v-if="currentSheet && !loading" class="mb-8">
+      <v-col cols="12">
+        <v-alert v-if="currentSheet.status === 'failed'" type="error" class="mb-6" border="start" variant="tonal">
+          <div class="d-flex align-center justify-space-between">
+            <div>
+              <div class="text-h6 mb-2">Processing Error</div>
+              <div>{{ currentSheet.error_message }}</div>
             </div>
+            <v-btn color="success" :loading="processing" :disabled="processing" @click="processCrewSheet">
+              {{ processing ? 'Retrying...' : 'Retry Processing' }}
+            </v-btn>
+          </div>
+        </v-alert>
+        <v-row v-if="currentSheet.status !== 'failed'" class="mb-4">
+          <v-col style="gap: 8px;" cols="12" class="d-flex justify-center flex-wrap">
+            <v-btn v-if="currentSheet.status === 'pending'" color="primary" :loading="processing" :disabled="processing" @click="processCrewSheet">
+              {{ processing ? 'Starting Process...' : 'Process Sheet' }}
+            </v-btn>
+            <v-btn color="info" :disabled="!canDownload" @click="downloadExcel">
+              <v-icon start>mdi-microsoft-excel</v-icon> Download Excel
+            </v-btn>
+            <v-btn color="success" :disabled="!isEdited" @click="saveChanges">
+              <v-icon start>mdi-content-save</v-icon> Save Changes
+            </v-btn>
+            <v-btn color="secondary" @click="goBack">
+              <v-icon start>mdi-arrow-left</v-icon> Back to List
+            </v-btn>
+          </v-col>
+        </v-row>
+      </v-col>
+    </v-row>
 
-            <!-- Actions -->
-            <div class="actions">
-                <button v-if="currentSheet.status === 'pending'" @click="processCrewSheet" class="btn-primary"
-                    :disabled="processing">
-                    {{ processing ? 'Starting Process...' : 'Process Sheet' }}
-                </button>
+    <v-row v-if="currentSheet && currentSheet.status === 'completed' && currentSheet.extracted_data">
+      <v-col cols="12">
+        <v-card class="pa-6 mb-8 elevation-2">
+          <v-card-title class="text-h5 mb-4">Extracted Data</v-card-title>
+          <v-row>
+            <v-col cols="12" md="6">
+              <v-card class="pa-4 mb-4" color="grey-lighten-4" flat>
+                <div class="text-h6 mb-2">Sheet Information</div>
+                <v-list density="compact">
+                  <v-list-item v-for="(value, key) in headerInfo" :key="String(key)">
+                    <v-list-item-title class="font-weight-bold">{{ formatLabel(String(key)) }}:</v-list-item-title>
+                    <v-list-item-subtitle>{{ value }}</v-list-item-subtitle>
+                  </v-list-item>
+                </v-list>
+              </v-card>
+            </v-col>
+            <v-col cols="12" md="6" v-if="summaryInfo">
+              <v-card class="pa-4 mb-4" color="grey-lighten-4" flat>
+                <div class="text-h6 mb-2">Summary</div>
+                <v-list density="compact">
+                  <v-list-item v-for="(value, key) in summaryInfo" :key="String(key)">
+                    <v-list-item-title class="font-weight-bold">{{ formatLabel(String(key)) }}:</v-list-item-title>
+                    <v-list-item-subtitle>{{ value }}</v-list-item-subtitle>
+                  </v-list-item>
+                </v-list>
+              </v-card>
+            </v-col>
+          </v-row>
 
-                <button @click="downloadExcel" class="btn-secondary" :disabled="!canDownload">
-                    <i class="fas fa-download"></i> Download Excel
-                </button>
-
-                <button @click="saveChanges" class="btn-primary" :disabled="!isEdited">
-                    <i class="fas fa-save"></i> Save Changes
-                </button>
-
-                <button @click="goBack" class="btn-secondary">
-                    Back to List
-                </button>
+          <!-- Editable Excel-like Table -->
+          <div class="mt-8">
+            <div style="gap: 8px;" class="d-flex align-center justify-center mb-4">
+              <v-btn color="success" @click="addRow">Add Row</v-btn>
+              <v-btn color="secondary" @click="toggleHeaderEditing">
+                {{ editingHeaders ? 'Done Editing Headers' : 'Edit Headers' }}
+              </v-btn>
             </div>
-
-            <!-- Extracted Data as Excel -->
-            <div v-if="currentSheet.status === 'completed' && currentSheet.extracted_data" class="extracted-data">
-                <!-- Excel-like Editable Grid -->
-                <div class="crew-sheet-data-section">
-                    <h2>Extracted Data</h2>
-                    <div class="sheet-info">
-                        <h3>Sheet Information</h3>
-                        <div class="info-grid">
-                            <div v-for="(value, key) in headerInfo" :key="key" class="info-item">
-                                <span class="info-label">{{ formatLabel(key) }}:</span>
-                                <span class="info-value">{{ value }}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="excel-container">
-                        <div class="table-controls">
-                            <button @click="addRow" class="add-row-btn">
-                                Add Row
-                            </button>
-                            <button @click="toggleHeaderEditing" class="add-row-btn" style="margin-left:5px">
-                                {{ editingHeaders ? 'Done Editing Headers' : 'Edit Headers' }}
-                            </button>
-                        </div>
-
-                        <div class="excel-table-container">
-                            <div class="excel-table">
-                                <!-- Header row -->
-                                <div class="excel-row excel-header-row">
-                                    <!-- ID column header -->
-                                    <div class="excel-cell excel-header-cell id-cell">
-                                        ID
-                                    </div>
-
-                                    <!-- Data column headers -->
-                                    <div v-for="(header, index) in editingHeaders ? editableHeaders : tableHeaders"
-                                        :key="header + '-' + index" class="excel-cell excel-header-cell"
-                                        :class="{ 'name-cell': header === 'EMPLOYEE NAME' }">
-                                        <template v-if="editingHeaders">
-                                            <input type="text" :value="header"
-                                                @input="(e) => updateEditableHeader(index, e.target.value)" @click.stop
-                                                style="width: 90%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
-                                            <button v-if="header !== 'EMPLOYEE NAME'" @click.stop="removeHeader(index)"
-                                                class="excel-btn-delete small-delete">
-                                                ×
-                                            </button>
-                                        </template>
-                                        <template v-else>
-                                            <div @click="sortTable(header)" class="header-content">
-                                                {{ header }}
-                                                <span v-if="sortColumn === header" class="sort-icon">
-                                                    {{ sortDirection === 'asc' ? '▲' : '▼' }}
-                                                </span>
-                                            </div>
-                                        </template>
-                                    </div>
-
-                                    <!-- Add new header button -->
-                                    <div v-if="editingHeaders" class="excel-cell excel-header-cell">
-                                        <input type="text" v-model="newHeader" @keydown.enter="addHeader"
-                                            placeholder="New header" @click.stop
-                                            style="width: 90%; padding: 0.5rem; border: 1px solid #ccc; border-radius: 4px;" />
-                                        <button @click.stop="addHeader" class="excel-btn-add">
-                                            +
-                                        </button>
-                                    </div>
-
-                                    <!-- Action column header -->
-                                    <div class="excel-cell excel-header-cell excel-actions-cell">
-                                        Actions
-                                    </div>
-                                </div>
-
-                                <!-- Data rows -->
-                                <div v-for="(employee, rowIndex) in sortedEmployees" :key="rowIndex" class="excel-row">
-                                    <!-- ID cell -->
-                                    <div class="excel-cell id-cell">
-                                        {{ rowIndex + 1 }}
-                                    </div>
-
-                                    <!-- Data cells -->
-                                    <div v-for="header in tableHeaders" :key="`${rowIndex}-${header}`"
-                                        class="excel-cell" :class="{
-                                            'uncertain': isUncertain(employee, header),
-                                            'edited': employee._edited && employee._edited.includes(header === 'EMPLOYEE NAME' ? 'name' : header),
-                                            'name-cell': header === 'EMPLOYEE NAME'
-                                        }">
-                                        <input type="text" :value="getCellValue(employee, header)"
-                                            @input="handleCellInput($event, rowIndex, header)"
-                                            :class="{ 'checkmark': getCellValue(employee, header) === '✓' }" />
-                                    </div>
-
-                                    <!-- Action column -->
-                                    <div class="excel-cell excel-actions-cell">
-                                        <button @click="deleteRow(rowIndex)" class="excel-btn-delete">
-                                            Delete
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Metadata Summary -->
-                <div v-if="summaryInfo" class="summary-info">
-                    <h3>Summary</h3>
-                    <div class="info-grid">
-                        <div v-for="(value, key) in summaryInfo" :key="key" class="info-item">
-                            <span class="info-label">{{ formatLabel(key) }}:</span>
-                            <span class="info-value">{{ value }}</span>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Raw JSON Data -->
-                <!-- <div class="raw-json">
-                    <details>
-                        <summary>View Raw JSON Data</summary>
-                        <pre>{{ JSON.stringify(currentSheet.extracted_data, null, 2) }}</pre>
-                    </details>
-                </div> -->
-            </div>
-        </div>
-    </div>
+            <v-table class="overflow-x-auto" fixed-header style="min-width: 900px;">
+              <thead class="font-weight-bold">
+                <tr>
+                  <th class="text-center" style="min-width: 60px;">ID</th>
+                  <th v-for="(header, index) in editingHeaders ? editableHeaders : tableHeaders" :key="header + '-' + index" class="text-center" style="min-width: 160px;">
+                    <template v-if="editingHeaders">
+                      <v-text-field
+                        v-model="editableHeaders[index]"
+                        density="compact"
+                        hide-details
+                        class="w-75 mx-auto"
+                      >
+                        <template #append-inner>
+                          <v-btn
+                            v-if="header !== 'EMPLOYEE NAME'"
+                            icon
+                            size="x-small"
+                            color="error"
+                            @click.stop="removeHeader(index)"
+                            tabindex="-1"
+                            style="height: 16px; width: 16px;"
+                          >
+                            <v-icon>mdi-close</v-icon>
+                          </v-btn>
+                        </template>
+                      </v-text-field>
+                    </template>
+                    <template v-else>
+                      <span @click="sortTable(header)" class="cursor-pointer">
+                        {{ header }}
+                        <v-icon v-if="sortColumn === header" size="x-small">
+                          {{ sortDirection === 'asc' ? 'mdi-arrow-up' : 'mdi-arrow-down' }}
+                        </v-icon>
+                      </span>
+                    </template>
+                  </th>
+                  <th v-if="editingHeaders" class="text-center" style="min-width: 140px;">
+                    <v-text-field
+                      v-model="newHeader"
+                      density="compact"
+                      hide-details
+                      class="w-75 mx-auto"
+                      placeholder="New header"
+                      @keydown.enter="addHeader"
+                    />
+                    <v-btn icon size="x-small" color="success" @click.stop="addHeader">
+                      <v-icon>mdi-plus</v-icon>
+                    </v-btn>
+                  </th>
+                  <th class="text-center" style="min-width: 120px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(employee, rowIndex) in sortedEmployees" :key="rowIndex">
+                  <td class="text-center font-weight-bold" style="min-width: 60px;">{{ rowIndex + 1 }}</td>
+                  <td v-for="header in tableHeaders" :key="`${rowIndex}-${header}`" style="min-width: 160px;">
+                    <v-text-field
+                      v-model="editableEmployees[rowIndex][header === 'EMPLOYEE NAME' ? 'name' : header]"
+                      density="compact"
+                      hide-details
+                      :class="{
+                        'bg-yellow-lighten-4': isUncertain(employee, header),
+                        'bg-blue-lighten-4': employee._edited && employee._edited.includes(header === 'EMPLOYEE NAME' ? 'name' : header),
+                        'font-weight-bold': header === 'EMPLOYEE NAME',
+                      }"
+                    />
+                  </td>
+                  <td class="text-center" style="min-width: 100px;">
+                    <v-btn icon size="small" color="error" @click="deleteRow(rowIndex)">
+                      <v-icon>mdi-delete</v-icon>
+                    </v-btn>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+          </div>
+        </v-card>
+      </v-col>
+    </v-row>
+  </v-container>
 </template>
+
+
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue';
@@ -483,16 +485,15 @@ watch(
 );
 
 // Get the status class for styling
-const statusClass = computed(() => {
-    if (!currentSheet.value) return '';
-    const status = currentSheet.value.status;
-    return {
-        'status-pending': status === 'pending',
-        'status-processing': status === 'processing',
-        'status-completed': status === 'completed',
-        'status-failed': status === 'failed',
-    };
-});
+const statusColor = (status?: string) => {
+    switch (status) {
+        case 'pending': return 'warning';
+        case 'processing': return 'info';
+        case 'completed': return 'success';
+        case 'failed': return 'error';
+        default: return 'default';
+    }
+};
 
 // Process the crew sheet
 const processCrewSheet = async () => {
@@ -531,7 +532,7 @@ const downloadExcel = () => {
         wsData.push(headers);
 
         // Add employee data rows
-        employees.value.forEach((employee, index) => {
+        employees.value.forEach((employee: any, index: number) => {
             const row = [];
 
             // Add data for each header except action column
@@ -924,446 +925,3 @@ onMounted(async () => {
     }
 });
 </script>
-<style scoped>
-.crew-sheet-detail {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
-}
-
-.header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 2rem;
-}
-
-.status-badge {
-    padding: 0.5rem 1rem;
-    border-radius: 20px;
-    font-weight: bold;
-    text-transform: uppercase;
-    font-size: 0.8rem;
-}
-
-.status-pending {
-    background-color: #fff3cd;
-    color: #856404;
-}
-
-.status-processing {
-    background-color: #cce5ff;
-    color: #004085;
-}
-
-.status-completed {
-    background-color: #d4edda;
-    color: #155724;
-}
-
-.status-failed {
-    background-color: #f8d7da;
-    color: #721c24;
-}
-
-.loading {
-    text-align: center;
-    padding: 2rem;
-    font-size: 1.2rem;
-    color: #666;
-}
-
-.error-message {
-    background-color: #f8d7da;
-    color: #721c24;
-    padding: 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
-}
-
-.crew-sheet-container {
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-}
-
-.actions {
-    display: flex;
-    gap: 1rem;
-    margin: 1rem 0;
-}
-
-.btn-primary {
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.btn-primary:disabled {
-    background-color: #a5d6a7;
-    cursor: not-allowed;
-}
-
-.btn-secondary {
-    background-color: #6c757d;
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.btn-secondary:disabled {
-    background-color: #adb5bd;
-    cursor: not-allowed;
-}
-
-.error-container {
-    background-color: #f8d7da;
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 1rem 0;
-}
-
-.btn-retry {
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-}
-
-.btn-retry:disabled {
-    background-color: #a5d6a7;
-    cursor: not-allowed;
-}
-
-.extracted-data {
-    background-color: #f9f9f9;
-    padding: 2rem;
-    border-radius: 8px;
-    margin-top: 2rem;
-}
-
-.header-info,
-.summary-info {
-    margin-bottom: 2rem;
-}
-
-.info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-    gap: 1rem;
-}
-
-.info-item {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.info-label {
-    font-weight: bold;
-}
-
-/* Excel-like Grid Styles */
-.excel-grid-container {
-    margin: 2rem 0;
-    width: 100%;
-    overflow-x: auto;
-}
-
-.excel-toolbar {
-    display: flex;
-    justify-content: flex-end;
-    margin-bottom: 0.5rem;
-}
-
-.excel-btn {
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 0.9rem;
-}
-
-.excel-btn-delete {
-    margin-left: 4px;
-    color: #ff4d4f;
-    cursor: pointer;
-    background: #fff;
-    border: 1px solid #ff4d4f;
-    border-radius: 4px;
-    padding: 2px 6px;
-}
-
-.small-delete {
-    padding: 0px 4px;
-    margin-left: 2px;
-    font-weight: bold;
-}
-
-.excel-btn-add {
-    margin-left: 2px;
-    color: #52c41a;
-    cursor: pointer;
-    background: #fff;
-    border: 1px solid #52c41a;
-    border-radius: 4px;
-    padding: 0px 4px;
-    font-weight: bold;
-}
-
-.excel-grid {
-    border: 1px solid #999;
-    border-radius: 4px;
-    overflow: hidden;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-}
-
-.excel-header-row {
-    display: flex;
-    background-color: #e6e6e6;
-    font-weight: bold;
-}
-
-.excel-header-cell {
-    flex: 1;
-    min-width: 150px;
-    padding: 0.75rem;
-    border-right: 1px solid #999;
-    position: relative;
-    cursor: pointer;
-    color: #333;
-}
-
-.excel-header-cell:hover {
-    background-color: #d9d9d9;
-}
-
-.sort-indicator {
-    margin-left: 5px;
-    font-size: 10px;
-}
-
-.excel-row {
-    display: flex;
-    border-top: 1px solid #999;
-}
-
-.excel-row:nth-child(even) {
-    background-color: #f2f2f2;
-}
-
-.excel-row:nth-child(odd) {
-    background-color: #ffffff;
-}
-
-.excel-cell {
-    flex: 1;
-    min-width: 150px;
-    padding: 0;
-    border-right: 1px solid #999;
-    position: relative;
-}
-
-.excel-actions-col {
-    flex: 0 0 100px;
-    min-width: 100px;
-}
-
-.excel-actions-cell {
-    flex: 0 0 100px;
-    min-width: 100px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.excel-cell input {
-    width: 100%;
-    height: 100%;
-    border: none;
-    padding: 0.75rem;
-    background: transparent;
-    color: #333;
-}
-
-.excel-cell input:focus {
-    outline: 2px solid #4caf50;
-    background-color: #efffef;
-}
-
-.excel-cell input.checkmark {
-    text-align: center;
-    font-weight: bold;
-    color: green !important;
-}
-
-/* Special styling for the name column */
-.excel-cell.name-cell input {
-    font-weight: 600;
-    color: #000 !important;
-    background-color: #f5f5f5;
-}
-
-/* Show debug info for cell content */
-.excel-cell::before {
-    position: absolute;
-    top: -15px;
-    left: 0;
-    font-size: 8px;
-    color: #999;
-    display: none;
-    /* Set to flex for debugging */
-}
-
-.excel-cell.uncertain {
-    background-color: #fff8e1;
-}
-
-.excel-cell.uncertain input {
-    color: #d32f2f;
-    font-style: italic;
-}
-
-.excel-cell.uncertain::after {
-    content: "?";
-    color: #d32f2f;
-    font-weight: bold;
-    position: absolute;
-    top: 2px;
-    right: 5px;
-    font-size: 12px;
-    background-color: #ffecb3;
-    border-radius: 50%;
-    width: 16px;
-    height: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.excel-cell.edited {
-    background-color: #e3f2fd;
-}
-
-.excel-cell.edited input {
-    color: #1565c0;
-}
-
-.raw-json {
-    margin-top: 2rem;
-    border-top: 1px solid #ddd;
-    padding-top: 2rem;
-}
-
-.raw-json summary {
-    cursor: pointer;
-    color: #007bff;
-    font-weight: bold;
-    margin-bottom: 1rem;
-}
-
-.raw-json pre {
-    background-color: #f8f9fa;
-    padding: 1rem;
-    border-radius: 4px;
-    overflow-x: auto;
-    font-size: 0.9rem;
-}
-
-.crew-sheet-data-section {
-    background-color: white;
-    border-radius: 8px;
-    padding: 20px;
-    margin-top: 20px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Table styles */
-.excel-container {
-    margin-top: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
-
-.excel-table-container {
-    overflow-x: auto;
-    /* Make it horizontally scrollable */
-    border: 1px solid #ddd;
-    border-radius: 4px;
-}
-
-.excel-table {
-    min-width: 100%;
-    width: max-content;
-    /* Allow the table to grow based on content */
-}
-
-.excel-row {
-    display: flex;
-    border-bottom: 1px solid #ddd;
-}
-
-.excel-row:nth-child(even) {
-    background-color: #f9f9f9;
-}
-
-.excel-cell {
-    padding: 8px;
-    border-right: 1px solid #ddd;
-    min-width: 120px;
-    display: flex;
-    align-items: center;
-}
-
-.id-cell {
-    min-width: 50px;
-    width: 50px;
-    justify-content: center;
-    font-weight: bold;
-    background-color: #f0f0f0;
-}
-
-.excel-btn-delete {
-    margin-left: 4px;
-    color: #ff4d4f;
-    cursor: pointer;
-    background: #fff;
-    border: 1px solid #ff4d4f;
-    border-radius: 4px;
-    padding: 2px 6px;
-}
-
-.small-delete {
-    padding: 0px 4px;
-    margin-left: 2px;
-    font-weight: bold;
-}
-
-.excel-btn-add {
-    margin-left: 2px;
-    color: #52c41a;
-    cursor: pointer;
-    background: #fff;
-    border: 1px solid #52c41a;
-    border-radius: 4px;
-    padding: 0px 4px;
-    font-weight: bold;
-}
-
-.header-content {
-    width: 100%;
-    cursor: pointer;
-}
-</style>

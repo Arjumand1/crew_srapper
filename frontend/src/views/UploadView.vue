@@ -1,46 +1,115 @@
 <template>
-    <div class="upload-container">
-        <h1>Upload Crew Sheet</h1>
-
-        <div v-if="error" class="error-message">
+  <v-container class="pa-6" max-width="800">
+    <v-card class="pa-6 mt-lg-8 mt-sm-6 mt-4 mb-8 elevation-2">
+      <v-row justify="center">
+        <v-col cols="12">
+          <div class="mb-6 text-h4">Upload Crew Sheet</div>
+        </v-col>
+        <v-col cols="12">
+          <v-alert
+            v-if="error"
+            type="error"
+            class="mb-4"
+            border="start"
+            variant="tonal"
+          >
             {{ error }}
-        </div>
-
-        <form @submit.prevent="handleSubmit" class="upload-form">
-            <div class="form-group">
-                <label for="name">Sheet Name (optional)</label>
-                <input type="text" id="name" v-model="form.name" placeholder="Enter a name for this crew sheet">
-            </div>
-
-            <div class="form-group">
-                <label for="image">Crew Sheet Image</label>
-                <input type="file" id="image" @change="handleFileChange" accept="image/*" required>
-                <small>Supported formats: JPEG, PNG, GIF, BMP</small>
-            </div>
-
-            <div v-if="imagePreview" class="image-preview">
-                <img :src="imagePreview" alt="Preview">
-            </div>
-
-            <button type="submit" class="btn-submit" :disabled="loading">
-                <span v-if="loading">Uploading...</span>
-                <span v-else>Upload Crew Sheet</span>
-            </button>
-        </form>
-    </div>
+          </v-alert>
+          <v-form @submit.prevent="handleSubmit">
+            <v-row>
+              <v-col cols="12" class="mb-4">
+                <v-text-field
+                  v-model="form.name"
+                  label="Sheet Name (optional)"
+                  placeholder="Enter a name for this crew sheet"
+                  variant="outlined"
+                  hide-details
+                />
+              </v-col>
+              <v-col cols="12" class="mb-4">
+                <div class="text-center mb-2">
+                  <input
+                    ref="fileInput"
+                    type="file"
+                    accept="image/*"
+                    class="d-none"
+                    @change="handleFileChange"
+                    required
+                  />
+                  <v-btn
+                    size="small"
+                    variant="text"
+                    @click="triggerFileInput"
+                    prepend-icon="mdi-upload"
+                    class="me-2 bg-primary"
+                  >
+                    Choose Image
+                  </v-btn>
+                  <span
+                    v-if="form.image"
+                    class="text-caption text-grey-darken-2"
+                  >
+                    {{ form.image.name }}
+                  </span>
+                </div>
+                <div class="text-grey-darken-1 text-caption mb-2">
+                  Supported formats: JPEG, PNG, GIF, BMP
+                </div>
+              </v-col>
+              <v-col cols="12" v-if="imagePreview">
+                <v-sheet
+                  class="pa-4 mb-4 d-flex justify-center align-center"
+                  rounded="lg"
+                  color="grey-lighten-4"
+                  border
+                >
+                  <v-img
+                    :src="imagePreview"
+                    alt="Preview"
+                    max-width="100%"
+                    max-height="300"
+                    contain
+                  />
+                </v-sheet>
+              </v-col>
+              <v-col cols="12" class="d-flex justify-center">
+                <v-btn
+                  color="success"
+                  type="submit"
+                  :loading="loading"
+                  :disabled="loading"
+                  size="large"
+                  class="px-8"
+                >
+                  <span v-if="loading">Uploading...</span>
+                  <span v-else>Upload Crew Sheet</span>
+                </v-btn>
+              </v-col>
+            </v-row>
+          </v-form>
+        </v-col>
+      </v-row>
+    </v-card>
+  </v-container>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from 'vue';
-import { useRouter } from 'vue-router';
-import { useCrewSheetStore } from '../stores/crewSheets';
+import { ref, reactive } from "vue";
+import { useRouter } from "vue-router";
+import { useCrewSheetStore } from "../stores/crewSheets";
+
+const fileInput = ref<HTMLInputElement | null>(null);
+
+function triggerFileInput() {
+  if (fileInput.value) fileInput.value.click();
+}
 
 const router = useRouter();
 const crewSheetStore = useCrewSheetStore();
 
 const form = reactive({
-    name: '',
-    image: null as File | null
+  name: "",
+  image: null as File | null,
 });
 
 const imagePreview = ref<string | null>(null);
@@ -48,134 +117,48 @@ const loading = ref(false);
 const error = ref<string | null>(null);
 
 const handleFileChange = (event: Event) => {
-    const input = event.target as HTMLInputElement;
-    if (input.files && input.files.length > 0) {
-        form.image = input.files[0];
+  const input = event.target as HTMLInputElement;
+  if (input.files && input.files.length > 0) {
+    form.image = input.files[0];
 
-        // Create a preview
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            imagePreview.value = e.target?.result as string;
-        };
-        reader.readAsDataURL(form.image);
-    }
+    // Create a preview
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      imagePreview.value = e.target?.result as string;
+    };
+    reader.readAsDataURL(form.image);
+  }
 };
 
 const handleSubmit = async () => {
-    if (!form.image) {
-        error.value = 'Please select an image file';
-        return;
+  if (!form.image) {
+    error.value = "Please select an image file";
+    return;
+  }
+
+  loading.value = true;
+  error.value = null;
+
+  try {
+    const formData = new FormData();
+    formData.append("image", form.image);
+
+    if (form.name) {
+      formData.append("name", form.name);
     }
 
-    loading.value = true;
-    error.value = null;
+    const response = await crewSheetStore.uploadCrewSheet(formData);
 
-    try {
-        const formData = new FormData();
-        formData.append('image', form.image);
-
-        if (form.name) {
-            formData.append('name', form.name);
-        }
-
-        const response = await crewSheetStore.uploadCrewSheet(formData);
-
-        // Navigate to the sheet detail page
-        router.push({ name: 'crewSheet', params: { id: response.id } });
-    } catch (e) {
-        if (e instanceof Error) {
-            error.value = e.message;
-        } else {
-            error.value = 'An error occurred during upload';
-        }
-    } finally {
-        loading.value = false;
+    // Navigate to the sheet detail page
+    router.push({ name: "crewSheet", params: { id: response.id } });
+  } catch (e) {
+    if (e instanceof Error) {
+      error.value = e.message;
+    } else {
+      error.value = "An error occurred during upload";
     }
+  } finally {
+    loading.value = false;
+  }
 };
 </script>
-
-<style scoped>
-.upload-container {
-    max-width: 800px;
-    /* margin: 0 auto; */
-    padding: 2rem;
-}
-
-.error-message {
-    background-color: #fee;
-    color: #c00;
-    padding: 1rem;
-    margin-bottom: 1rem;
-    border-radius: 4px;
-}
-
-.upload-form {
-    background-color: #f9f9f9;
-    padding: 2rem;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.form-group {
-    margin-bottom: 1.5rem;
-}
-
-label {
-    display: block;
-    font-weight: bold;
-    margin-bottom: 0.5rem;
-}
-
-input[type="text"] {
-    width: 100%;
-    padding: 0.75rem;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 1rem;
-}
-
-input[type="file"] {
-    display: block;
-    margin-top: 0.5rem;
-}
-
-small {
-    display: block;
-    color: #666;
-    margin-top: 0.25rem;
-}
-
-.image-preview {
-    margin-top: 1rem;
-    margin-bottom: 1rem;
-    border: 1px dashed #ccc;
-    padding: 1rem;
-    text-align: center;
-}
-
-.image-preview img {
-    max-width: 100%;
-    max-height: 300px;
-    object-fit: contain;
-}
-
-.btn-submit {
-    background-color: #4caf50;
-    color: white;
-    border: none;
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.3s;
-}
-
-.btn-submit:hover {
-    background-color: #45a049;
-}
-
-.btn-submit:disabled {
-    background-color: #ccc;
-    cursor: not-allowed;
-}
-</style>

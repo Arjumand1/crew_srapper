@@ -2,15 +2,15 @@
   <v-container class="d-flex align-center justify-center fill-height" fluid>
     <v-card elevation="4" class="pa-6 mt-md-6 mt-4 w-lg-25 w-md-50 w-sm-75 w-100">
       <v-card-title class="text-h4 font-weight-bold text-center">Register</v-card-title>
-      <!-- <v-alert v-if="authStore.error" type="error" class="mb-4" dense>{{ authStore.error }}</v-alert> -->
-      <v-form @submit.prevent="handleRegister">
+      <v-alert v-if="authStore.error" type="error" class="mb-4" dense>{{ authStore.error }}</v-alert>
+      <v-form ref="formRef" @submit.prevent="handleRegister">
         <v-text-field
           v-model="name"
           label="Full Name"
           type="text"
           required
           placeholder="Enter your full name"
-          class="mb-4"
+          class="mb-4 mt-8"
           autocomplete="name"
           :rules="[v => !!v || 'Full name is required']"
           :disabled="authStore.loading"
@@ -21,7 +21,7 @@
           type="email"
           required
           placeholder="Enter your email"
-          class="mb-4 mt-8"
+          class="mb-4"
           autocomplete="email"
           :rules="[v => !!v || 'Email is required', v => /.+@.+\..+/.test(v) || 'E-mail must be valid']"
           :disabled="authStore.loading"
@@ -68,9 +68,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '../stores/auth'
+
+onMounted(() => {
+  authStore.error = null;
+})
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -81,7 +85,16 @@ const name = ref('')
 const password = ref('')
 const password2 = ref('')
 
+const formRef = ref();
+
 const handleRegister = async () => {
+    // Validate form before sending request
+    const form = formRef.value;
+    if (form && typeof form.validate === 'function') {
+        const result = await form.validate();
+        // Vuetify 3 returns { valid: boolean }
+        if (!result.valid) return;
+    }
     try {
         const success = await authStore.register(
             email.value,

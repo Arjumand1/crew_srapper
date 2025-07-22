@@ -4,10 +4,10 @@ import TheNavbar from './components/TheNavbar.vue'
 </script>
 
 <template>
-  <div>
-    <TheNavbar />
+  <v-app>
+    <TheNavbar class="mb-12" />
     <RouterView />
-  </div>
+  </v-app>
 </template>
 
 <style>

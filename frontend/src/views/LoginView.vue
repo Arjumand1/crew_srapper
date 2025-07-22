@@ -2,8 +2,8 @@
   <v-container class="d-flex align-center justify-center fill-height" fluid>
     <v-card elevation="4" class="pa-6 mt-md-16 mt-8 w-lg-25 w-md-50 w-sm-75 w-100 ">
       <v-card-title class="text-h4 font-weight-bold text-center mb-12">Login</v-card-title>
-      <!-- <v-alert v-if="authStore.error" type="error" class="mb-4" dense>{{ authStore.error }}</  v-alert> -->
-      <v-form @submit.prevent="handleLogin">
+      <v-alert v-if="authStore.error" type="error" class="mb-4" dense>{{ authStore.error }}</  v-alert>
+      <v-form ref="formRef" @submit.prevent="handleLogin">
         <v-text-field
           v-model="email"
           label="Email"
@@ -46,9 +46,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../stores/auth";
+
+onMounted(() => {
+  authStore.error = null;
+})
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -56,7 +60,16 @@ const authStore = useAuthStore();
 const email = ref("");
 const password = ref("");
 
+const formRef = ref();
+
 const handleLogin = async () => {
+  // Validate form before sending request
+  const form = formRef.value;
+  if (form && typeof form.validate === 'function') {
+    const result = await form.validate();
+    // Vuetify 3 returns { valid: boolean }
+    if (!result.valid) return;
+  }
   try {
     const success = await authStore.login(email.value, password.value);
     if (success) {
