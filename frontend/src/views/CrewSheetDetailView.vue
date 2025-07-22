@@ -226,9 +226,16 @@ async function loadSheet() {
     let parsed = typeof data === 'string' ? JSON.parse(data) : data;
     // Try to get headers from several possible keys
     headers.value = parsed?.table_headers || parsed?.headers || parsed?.column_names || (parsed?.employees?.length ? Object.keys(parsed.employees[0]) : []);
-    if (!headers.value.includes('EMPLOYEE NAME') && parsed?.employees?.length && parsed.employees[0].name !== undefined) {
+    
+    // Check for employee name column in various formats and ensure we only have one
+    const hasEmployeeName = headers.value.some(h => 
+      h === 'EMPLOYEE NAME' || h === 'EMPLOYEE_NAME' || h === 'name'
+    );
+    
+    if (!hasEmployeeName && parsed?.employees?.length && parsed.employees[0].name !== undefined) {
       headers.value.unshift('EMPLOYEE NAME');
     }
+    
     // Get rows from employees/data/rows
     rows.value = parsed?.employees || parsed?.data || parsed?.rows || [];
     // Ensure all rows have all headers
