@@ -408,7 +408,6 @@ async function saveChanges() {
     console.log('Refreshing data from server...');
     await loadSheet();
 
-    alert('Changes saved successfully!');
   } catch (e) {
     console.error('Save failed:', e);
     alert('Save failed. Please try again.');

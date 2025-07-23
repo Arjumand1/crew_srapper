@@ -159,15 +159,16 @@
                 @click.stop="viewSheet(sheet.id)"
                 >View</v-btn
               >
-              <br>
+              <!-- <br>
               <v-btn
                 v-if="sheet.status === 'pending'"
                 size="small"
                 color="success"
                 class="mt-1"
+                :loading="showButton"
                 @click.stop="processSheet(sheet.id)"
                 >Process</v-btn
-              >
+              > -->
             </td>
           </tr>
         </tbody>
@@ -187,6 +188,7 @@ const crewSheetStore = useCrewSheetStore();
 const loading = ref(true);
 const error = ref<string | null>(null);
 const viewMode = ref("grid"); // Default to grid view with images
+// const showButton = ref(false)
 
 // Computed property to get crew sheets from store
 const crewSheets = ref<CrewSheet[]>([]);
@@ -241,6 +243,7 @@ const viewSheet = (id: string) => {
 };
 
 const processSheet = async (id: string) => {
+  // showButton.value = true;
   try {
     await crewSheetStore.processCrewSheet(id);
     await crewSheetStore.fetchCrewSheets();
@@ -252,5 +255,7 @@ const processSheet = async (id: string) => {
       error.value = "Error processing crew sheet";
     }
   }
+  alert("Processing completed");
+  // showButton.value = false;
 };
 </script>
