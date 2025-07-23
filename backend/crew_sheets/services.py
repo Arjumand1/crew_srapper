@@ -1,38 +1,32 @@
 import os
 import json
 import base64
-import logging
 import time
-import httpx
 import re
+import logging
 from datetime import datetime
+from django.utils import timezone
+from openai import OpenAI
+from openai.types.chat import ChatCompletion
+from openai import APIError, APIConnectionError, APITimeoutError
+from .analytics import LearningSystem, QualityValidator
 from .models import CrewSheet
-from openai import OpenAI, APITimeoutError, APIConnectionError, APIError
+import httpx
 
 logger = logging.getLogger(__name__)
 
 
 class OpenAIService:
-    """Service for OpenAI API calls."""
+    """Service for interacting with OpenAI's API."""
 
     @staticmethod
     def get_client():
-        """
-        Get an OpenAI client instance.
-        """
-        api_key = os.environ.get('OPENAI_API_KEY')
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
-        if api_key in ['your-openai-api-key', 'sk-...', 'your_api_key_here']:
-            raise ValueError("OPENAI_API_KEY contains a placeholder value")
-        try:
-            # Increased timeout to 120 seconds to prevent timeouts
-            http_client = httpx.Client(proxies=None, timeout=120.0)
-            return OpenAI(api_key=api_key, http_client=http_client)
-        except Exception as e:
-            logger.error(f"Error initializing OpenAI client: {e}")
-            # fallback minimal client initialization
-            return OpenAI(api_key=api_key)
+        """Get OpenAI client with proper configuration."""
+        return OpenAI(
+            api_key=os.environ.get("OPENAI_API_KEY"),
+            timeout=180.0,  # 3 minutes timeout for large images
+            http_client=httpx.Client(proxies=None, timeout=180.0)
+        )
 
     @staticmethod
     def _call_openai_api_with_retry(client, messages, max_tokens=4096, max_retries=2, timeout=120):
@@ -144,10 +138,7 @@ class OpenAIService:
             }
 
         # Prepare OpenAI client with increased timeout
-        client = OpenAI(
-            api_key=os.environ.get("OPENAI_API_KEY"),
-            timeout=180.0,  # Increased timeout to 3 minutes for large images
-        )
+        client = OpenAIService.get_client()
 
         # Configure the system prompt for data extraction
         messages = [
@@ -185,13 +176,14 @@ COST CENTER & TASK HANDLING:
 - Cost centers and tasks are often PART OF THE HEADER HIERARCHY, not separate metadata
 - They typically appear ABOVE the job columns in the header structure
 - Create headers that reflect this relationship: COST_CENTER_TASK_JOB_TYPE
-- Number them sequentially only if needed for uniqueness: "KW13_ZERO_JOB_NO_HRS_1", "KW13_SOCKER_JOB_NO_HRS_1"
+- Number them sequentially only if needed for uniqueness: "KW13_ZERO_JOB_NO_HRS_1", "KW13_SOCKER_JOB_NO_HRS_1". THis is just example. You will need to take care of every center and task.
 - INCLUDE the cost center and task values directly in the header names, not just in metadata
+- Sometimes there will be no cost centers and tasks above so only job type
 
 DATA PLACEMENT ACCURACY:
 - Match data values to the CORRECT hierarchical columns
 - Time values must go in precise columns (START_IN, BREAK1_OUT, etc.)
-- Job data must go in the corresponding hierarchical columns (COST_CENTER_TASK_JOB_TYPE)
+- Job data must go in the corresponding hierarchical columns (COST_CENTER_TASK_JOB_TYPE) for all cost centers and tasks and their job types.
 - Only use placeholder marks ("✓") if actually present in original
 - Extract actual numeric and text values whenever present
 
@@ -300,6 +292,18 @@ Remember: correctly identify and preserve ALL hierarchical relationships in the 
                     if "valid" not in extracted_data:
                         extracted_data["valid"] = True
 
+                    # Add performance metrics for learning system
+                    extracted_data["_performance_metrics"] = {
+                        "extraction_time_seconds": time.time() - start_time,
+                        "api_call_duration": duration,
+                        "token_usage": {
+                            "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                            "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                            "total_tokens": response.usage.total_tokens if response.usage else 0
+                        },
+                        "attempt_number": attempt
+                    }
+
                     return extracted_data
                 except json.JSONDecodeError as e:
                     logger.error(f"JSON parsing error: {str(e)}")
@@ -319,6 +323,19 @@ Remember: correctly identify and preserve ALL hierarchical relationships in the 
                             # Add validation flag if not present
                             if "valid" not in extracted_data:
                                 extracted_data["valid"] = True
+
+                            # Add performance metrics
+                            extracted_data["_performance_metrics"] = {
+                                "extraction_time_seconds": time.time() - start_time,
+                                "api_call_duration": duration,
+                                "token_usage": {
+                                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                                    "total_tokens": response.usage.total_tokens if response.usage else 0
+                                },
+                                "attempt_number": attempt,
+                                "used_regex_fallback": True
+                            }
 
                             return extracted_data
                     except Exception as regex_err:
@@ -391,7 +408,7 @@ class CrewSheetProcessor:
                 error_message = "Image file not found or inaccessible"
                 crew_sheet.status = 'failed'
                 crew_sheet.error_message = error_message
-                crew_sheet.date_processed = datetime.now()
+                crew_sheet.date_processed = timezone.now()
                 crew_sheet.save()
                 return False
 
@@ -409,7 +426,7 @@ class CrewSheetProcessor:
                 crew_sheet.status = 'failed'
                 crew_sheet.error_message = error_message
                 crew_sheet.extracted_data = extracted_data  # Save the cleaned data
-                crew_sheet.date_processed = datetime.now()
+                crew_sheet.date_processed = timezone.now()
                 crew_sheet.save()
                 logger.error(
                     f"Failed to process crew sheet {crew_sheet_id}: {error_message}")
@@ -419,7 +436,7 @@ class CrewSheetProcessor:
             crew_sheet.extracted_data = extracted_data
             crew_sheet.status = 'completed' if extracted_data.get(
                 'valid', True) else 'failed'
-            crew_sheet.date_processed = datetime.now()
+            crew_sheet.date_processed = timezone.now()
 
             # Only set error message if the sheet is invalid
             if not extracted_data.get('valid', True):
@@ -445,7 +462,7 @@ class CrewSheetProcessor:
                 crew_sheet.status = 'failed'
                 # Use empty string instead of None for NOT NULL constraint
                 crew_sheet.error_message = error_message
-                crew_sheet.date_processed = datetime.now()
+                crew_sheet.date_processed = timezone.now()
 
                 # Don't save the error in the extracted data
                 if not crew_sheet.extracted_data:
@@ -458,3 +475,75 @@ class CrewSheetProcessor:
                     f"Failed to update crew sheet status after error: {str(inner_e)}")
 
             return False
+
+    @staticmethod
+    def process_crew_sheet_with_learning(crew_sheet):
+        """
+        Process a crew sheet through the complete learning pipeline.
+
+        Args:
+            crew_sheet: CrewSheet model instance
+
+        Returns:
+            dict: Processing results with learning metrics
+        """
+        try:
+            logger.info(
+                f"Processing crew sheet {crew_sheet.id} with learning pipeline")
+
+            # Update status
+            crew_sheet.status = 'processing'
+            crew_sheet.save()
+
+            # Extract data using OpenAI
+            extracted_data = OpenAIService.extract_crew_sheet_data(
+                crew_sheet.image.path)
+
+            if not extracted_data.get('valid', False):
+                crew_sheet.status = 'failed'
+                crew_sheet.error_message = extracted_data.get(
+                    'error_message', 'Unknown error')
+                crew_sheet.save()
+                return extracted_data
+
+            # Remove performance metrics from main data before saving
+            performance_metrics = extracted_data.pop(
+                '_performance_metrics', {})
+
+            # Process through learning system
+            learning_results = LearningSystem.process_extraction(
+                crew_sheet, extracted_data)
+
+            # Update crew sheet with processed data
+            crew_sheet.extracted_data = extracted_data
+            crew_sheet.status = 'completed'
+            crew_sheet.date_processed = timezone.now()
+            crew_sheet.confidence_score = learning_results['confidence_score']
+            crew_sheet.needs_review = learning_results['needs_review']
+            crew_sheet.save()
+
+            logger.info(
+                f"Successfully processed crew sheet {crew_sheet.id} - Confidence: {learning_results['confidence_score']:.2f}")
+
+            return {
+                "valid": True,
+                "extracted_data": extracted_data,
+                "learning_metrics": {
+                    "confidence_score": learning_results['confidence_score'],
+                    "needs_review": learning_results['needs_review'],
+                    "issues_detected": learning_results['issues'],
+                    "performance_metrics": performance_metrics
+                }
+            }
+
+        except Exception as e:
+            logger.error(
+                f"Error processing crew sheet {crew_sheet.id}: {str(e)}")
+            crew_sheet.status = 'failed'
+            crew_sheet.error_message = str(e)
+            crew_sheet.save()
+
+            return {
+                "valid": False,
+                "error_message": str(e)
+            }

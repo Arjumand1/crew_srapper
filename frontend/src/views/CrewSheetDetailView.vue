@@ -1,16 +1,66 @@
 <template>
   <v-container class="py-8 w-lg-75 w-100" fluid>
     <v-row class="mb-6 align-center mt-6 justify-space-between">
-      <v-col cols="12" md="8">
+      <v-col cols="12" md="6">
         <div class="d-flex align-center gap-4">
           <v-icon size="x-large" color="primary">mdi-file-document-outline</v-icon>
-          <span class="text-h4">{{ currentSheet?.name || 'Crew Sheet Details' }}</span>
+          <div>
+            <span class="text-h4">{{ currentSheet?.name || 'Crew Sheet Details' }}</span>
+            <!-- Quality indicators -->
+            <div v-if="currentSheet && currentSheet.confidence_score !== undefined" class="mt-2">
+              <v-chip :color="getConfidenceColor(currentSheet.confidence_score)" size="small" class="mr-2">
+                <v-icon start size="small">mdi-gauge</v-icon>
+                Confidence: {{ (currentSheet.confidence_score * 100).toFixed(1) }}%
+              </v-chip>
+              <v-chip v-if="currentSheet.needs_review" color="warning" size="small">
+                <v-icon start size="small">mdi-alert</v-icon>
+                Needs Review
+              </v-chip>
+            </div>
+          </div>
         </div>
       </v-col>
-      <v-col cols="12" md="4" class="d-flex justify-end align-center">
+      <v-col cols="12" md="6" class="d-flex justify-end align-center">
         <v-chip :color="statusColor(currentSheet?.status)" class="text-uppercase" size="large">
           {{ currentSheet?.status }}
         </v-chip>
+      </v-col>
+    </v-row>
+
+    <!-- Learning metrics panel -->
+    <v-row v-if="learningMetrics && showLearningMetrics" class="mb-4">
+      <v-col cols="12">
+        <v-expansion-panels variant="accordion">
+          <v-expansion-panel title="Quality Metrics">
+            <v-expansion-panel-text>
+              <v-row>
+                <v-col cols="12" md="6">
+                  <v-card class="pa-4" variant="tonal">
+                    <div class="text-subtitle-2 mb-2">Confidence Score</div>
+                    <div class="text-h5" :class="getConfidenceColor(learningMetrics.confidence_score)">
+                      {{ (learningMetrics.confidence_score * 100).toFixed(1) }}%
+                    </div>
+                    <v-progress-linear :model-value="learningMetrics.confidence_score * 100"
+                      :color="getConfidenceColor(learningMetrics.confidence_score)" height="6"
+                      class="mt-2"></v-progress-linear>
+                  </v-card>
+                </v-col>
+                <v-col cols="12" md="6">
+                  <v-card class="pa-4" variant="tonal">
+                    <div class="text-subtitle-2 mb-2">Issues Detected</div>
+                    <v-chip-group v-if="learningMetrics.issues_detected?.length">
+                      <v-chip v-for="issue in learningMetrics.issues_detected" :key="issue" size="small"
+                        color="warning">
+                        {{ issue }}
+                      </v-chip>
+                    </v-chip-group>
+                    <span v-else class="text-success">No issues detected</span>
+                  </v-card>
+                </v-col>
+              </v-row>
+            </v-expansion-panel-text>
+          </v-expansion-panel>
+        </v-expansion-panels>
       </v-col>
     </v-row>
 
@@ -45,6 +95,7 @@
             </v-btn>
             <v-btn color="success" :disabled="!isEdited" @click="saveChanges">
               <v-icon start>mdi-content-save</v-icon> Save Changes
+              <v-badge v-if="editCount > 0" :content="editCount" color="warning" inline></v-badge>
             </v-btn>
             <v-btn color="secondary" @click="goBack">
               <v-icon start>mdi-arrow-left</v-icon> Back to List
@@ -157,9 +208,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, nextTick, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { useCrewSheetStore } from '../stores/crewSheets';
+import axios from 'axios';
 
 // Utility to format summary/header labels for display
 function formatLabel(label: string) {
@@ -176,16 +228,16 @@ function isEmployeeNameHeader(header) {
 
 function parseHierarchicalHeader(header) {
   if (!header || typeof header !== 'string') return { costCenter: null, task: null, jobType: header };
-  
+
   // Common job-related keywords that indicate job type part of the header
   const jobKeywords = ['JOB', 'PIECE', 'WORK', 'HRS', 'HOURS', 'NO', 'PCS'];
   const parts = header.split('_');
-  
+
   // If header is too short, treat it as a simple header
   if (parts.length < 3) {
     return { costCenter: null, task: null, jobType: header.replace(/_/g, ' ') };
   }
-  
+
   // Find where job type starts in the header
   let jobTypeStartIndex = -1;
   for (let i = 0; i < parts.length; i++) {
@@ -194,7 +246,7 @@ function parseHierarchicalHeader(header) {
       break;
     }
   }
-  
+
   // If no job keywords found, use a default split (first=costCenter, middle=task, rest=jobType)
   if (jobTypeStartIndex === -1) {
     // Default to treating first part as cost center, second as task, rest as job type if 3+ parts
@@ -214,41 +266,41 @@ function parseHierarchicalHeader(header) {
       return { costCenter: null, task: null, jobType: header.replace(/_/g, ' ') };
     }
   }
-  
+
   // Extract cost center, task, and job type based on found index
   const costCenter = parts[0] || null;
   const task = jobTypeStartIndex > 1 ? parts.slice(1, jobTypeStartIndex).join(' ') : null;
   const jobType = parts.slice(jobTypeStartIndex).join(' ');
-  
+
   return { costCenter, task, jobType };
 }
 
 function formatHeaderForDisplay(header) {
   if (!header) return '';
-  
+
   // Handle employee name headers specially
   if (isEmployeeNameHeader(header)) {
     return 'EMPLOYEE NAME';
   }
-  
+
   // Parse hierarchical structure
   const { costCenter, task, jobType } = parseHierarchicalHeader(header);
-  
+
   // Build multi-line display with cost center on top, task in middle, job type at bottom
   let displayText = '';
-  
+
   if (costCenter) {
     displayText += costCenter;
   }
-  
+
   if (task) {
     displayText += (displayText ? '\n' : '') + task;
   }
-  
+
   if (jobType) {
     displayText += (displayText ? '\n' : '') + jobType;
   }
-  
+
   return displayText || header.replace(/_/g, ' ');
 }
 
@@ -306,7 +358,10 @@ async function loadSheet() {
   try {
     await crewSheetStore.fetchCrewSheet(sheetId.value);
     const data = crewSheetStore.currentCrewSheet?.extracted_data;
-    let parsed = typeof data === 'string' ? JSON.parse(data) : data;
+    let parsed = typeof data === 'string'
+      ? JSON.parse(data)
+      : data || {};
+
     // Try to get headers from several possible keys
     headers.value = parsed?.table_headers || parsed?.headers || parsed?.column_names || (parsed?.employees?.length ? Object.keys(parsed.employees[0]) : []);
 
@@ -383,6 +438,32 @@ async function saveChanges() {
     let completeData = typeof originalData === 'string'
       ? JSON.parse(originalData)
       : originalData || {};
+
+    // Track all edits for learning system
+    if (sessionId.value) {
+      console.log('Tracking edits for learning system...');
+      const originalEmployees = completeData.employees || [];
+
+      // Loop through all rows to find edits
+      for (let i = 0; i < rows.value.length; i++) {
+        const row = rows.value[i];
+        // Skip if no edits in this row
+        if (!row._edited || !row._edited.length) continue;
+
+        // Track each edited field
+        for (const fieldName of row._edited) {
+          const newValue = row[fieldName];
+          // Get the original value if it exists
+          let originalValue = '';
+          if (originalEmployees[i]) {
+            originalValue = originalEmployees[i][fieldName] || '';
+          }
+
+          // Track the edit
+          await trackEdit(fieldName, originalValue, newValue, i);
+        }
+      }
+    }
 
     // Update with our edited data while preserving all original fields
     completeData = {
@@ -474,7 +555,7 @@ const processCrewSheet = async () => {
 };
 
 // Method to download the data as Excel
-const downloadExcel = () => {
+const downloadExcel = async () => {
   if (!rows.value || rows.value.length === 0) {
     alert('No data to export');
     return;
@@ -487,10 +568,10 @@ const downloadExcel = () => {
     // Create sheet for employee data
     const employeeData = rows.value.map(employee => {
       const row = {};
-      
+
       // Always add employee name (ensuring it's never empty)
       row['EMPLOYEE NAME'] = employee.name || '';
-      
+
       // Add all other headers
       headers.value.forEach(header => {
         if (!isEmployeeNameHeader(header)) {
@@ -499,7 +580,7 @@ const downloadExcel = () => {
           row[displayHeader] = employee[header] || '';
         }
       });
-      
+
       return row;
     });
 
@@ -511,7 +592,7 @@ const downloadExcel = () => {
       const metadataEntries = Object.entries(headerInfo.value).map(([key, value]) => {
         return { Key: key.replace(/_/g, ' ').toUpperCase(), Value: value || '' };
       });
-      
+
       if (metadataEntries.length > 0) {
         const metadataSheet = XLSX.utils.json_to_sheet(metadataEntries);
         XLSX.utils.book_append_sheet(wb, metadataSheet, 'Metadata');
@@ -523,7 +604,7 @@ const downloadExcel = () => {
       const summaryEntries = Object.entries(summaryInfo.value).map(([key, value]) => {
         return { Key: key.replace(/_/g, ' ').toUpperCase(), Value: value || '' };
       });
-      
+
       if (summaryEntries.length > 0) {
         const summarySheet = XLSX.utils.json_to_sheet(summaryEntries);
         XLSX.utils.book_append_sheet(wb, summarySheet, 'Summary');
@@ -659,42 +740,42 @@ const canDownload = computed(() => {
 
 const isUncertain = (employee: any, header: string) => {
   if (!employee || !employee._uncertain) return false;
-  
+
   // Map header to field name
   const fieldName = isEmployeeNameHeader(header) ? 'name' : header;
-  
+
   // Check if field is in uncertain array
   if (Array.isArray(employee._uncertain) && employee._uncertain.includes(fieldName)) {
     return true;
   }
-  
+
   return false;
 };
 
 // Get value for a cell, handling special cases
 const getCellValue = (employee: any, header: string) => {
   if (!employee) return '';
-  
+
   // Map header to field name
   const fieldName = isEmployeeNameHeader(header) ? 'name' : header;
-  
+
   // Get the value
   const value = employee[fieldName];
-  
+
   // Handle missing values
   if (value === null || value === undefined) return '';
-  
+
   // Handle object values (from AI extraction)
   if (typeof value === 'object' && value !== null) {
     if ('value' in value) return value.value || '';
     if ('text' in value) return value.text || '';
   }
-  
+
   // Handle checkmarks
   if (value === true || value === 'true' || value === '✓') {
     return '✓';
   }
-  
+
   return String(value);
 };
 
@@ -743,7 +824,15 @@ const downloadImage = async () => {
 };
 
 // Navigate back to the list view
-const goBack = () => {
+const goBack = async () => {
+  // End session if active
+  if (sessionId.value) {
+    try {
+      await endSession('abandoned');
+    } catch (e) {
+      console.warn('Error ending session:', e);
+    }
+  }
   router.push({ name: 'crewSheets' });
 };
 
@@ -752,6 +841,12 @@ onMounted(async () => {
   try {
     loading.value = true;
     await crewSheetStore.fetchCrewSheet(sheetId.value.toString());
+
+    // Start session for completed sheets
+    if (currentSheet.value?.status === 'completed') {
+      await startSession();
+    }
+
   } catch (e) {
     if (e instanceof Error) {
       error.value = e.message;
@@ -761,5 +856,99 @@ onMounted(async () => {
   } finally {
     loading.value = false;
   }
+});
+
+// Clean up session on unmount
+onUnmounted(async () => {
+  if (sessionId.value) {
+    try {
+      await endSession('abandoned');
+    } catch (e) {
+      console.warn('Error ending session on unmount:', e);
+    }
+  }
+});
+
+// Session tracking variables
+const sessionId = ref(null);
+const sessionStartTime = ref(null);
+
+// Start a tracking session
+const startSession = async () => {
+  if (!currentSheet.value?.id) return;
+
+  try {
+    const response = await crewSheetStore.startSession(currentSheet.value.id);
+    sessionId.value = response.session_id;
+    sessionStartTime.value = Date.now();
+
+    // Update learning metrics if available
+    if (response.confidence_score !== undefined) {
+      learningMetrics.value = {
+        confidence_score: response.confidence_score,
+        needs_review: response.needs_review,
+        issues_detected: []
+      };
+      showLearningMetrics.value = true;
+    }
+
+    console.log('Session started:', sessionId.value);
+  } catch (e) {
+    console.warn('Error starting session:', e);
+  }
+};
+
+// End the current session with an outcome
+const endSession = async (outcome = 'completed') => {
+  if (!sessionId.value) return;
+
+  try {
+    const response = await crewSheetStore.endSession(sessionId.value, outcome);
+    console.log('Session ended:', outcome);
+  } catch (e) {
+    console.warn('Error ending session:', e);
+  } finally {
+    // Always cleanup session state, even if API call fails
+    sessionId.value = null;
+    sessionStartTime.value = null;
+  }
+};
+
+// Track individual edits
+const trackEdit = async (fieldName, originalValue, newValue, employeeIndex = null) => {
+  if (!sessionId.value) return;
+
+  try {
+    await crewSheetStore.trackEdit(
+      sessionId.value,
+      fieldName,
+      originalValue,
+      newValue,
+      employeeIndex,
+      (Date.now() - sessionStartTime.value) / 1000
+    );
+  } catch (e) {
+    console.warn('Error tracking edit:', e);
+  }
+};
+
+// Learning metrics
+const learningMetrics = ref(null);
+const showLearningMetrics = ref(false);
+
+// Get confidence color based on score
+function getConfidenceColor(score: number) {
+  if (score < 0.5) return 'error';
+  if (score < 0.8) return 'warning';
+  return 'success';
+}
+
+// Edit count
+const editCount = computed(() => {
+  let count = 0;
+  for (const row of rows.value) {
+    if (row._edited) count += row._edited.length;
+  }
+  return count;
 });
 </script>

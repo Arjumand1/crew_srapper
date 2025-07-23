@@ -18,7 +18,7 @@
         >
       </div>
       <v-row class="mb-8" align="stretch" justify="center">
-        <v-col cols="12" sm="6">
+        <v-col cols="12" sm="6" md="4">
           <v-card
             class="pa-6 text-center d-flex flex-column justify-space-between cursor-pointer elevation-2"
             @click="navigateTo('crewSheets')"
@@ -32,7 +32,7 @@
             <div class="text-h5">📋</div>
           </v-card>
         </v-col>
-        <v-col cols="12" sm="6">
+        <v-col cols="12" sm="6" md="4">
           <v-card
             class="pa-6 text-center fill-height d-flex flex-column justify-space-between cursor-pointer elevation-2"
             @click="navigateTo('upload')"
@@ -42,6 +42,18 @@
               <div class="mb-4">Upload a new crew sheet for AI processing</div>
             </div>
             <div class="text-h5">📎</div>
+          </v-card>
+        </v-col>
+        <v-col cols="12" sm="6" md="4">
+          <v-card
+            class="pa-6 text-center fill-height d-flex flex-column justify-space-between cursor-pointer elevation-2"
+            @click="navigateTo('analytics')"
+          >
+            <div>
+              <div class="text-h6 mb-2">Analytics Dashboard</div>
+              <div class="mb-4">View extraction quality metrics and insights</div>
+            </div>
+            <div class="text-h5">📊</div>
           </v-card>
         </v-col>
       </v-row>

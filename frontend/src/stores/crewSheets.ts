@@ -196,5 +196,72 @@ export const useCrewSheetStore = defineStore("crewSheets", {
         this.loading = false;
       }
     },
+
+    async startSession(id: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/${id}/start_session/`,
+          {},
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error starting session:", error);
+        throw error;
+      }
+    },
+
+    async endSession(sessionId: string, outcome: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/end_session/`,
+          {
+            session_id: sessionId,
+            outcome: outcome,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error ending session:", error);
+        throw error;
+      }
+    },
+
+    async trackEdit(sessionId: string, fieldName: string, originalValue: any, newValue: any, employeeIndex: number | null = null, editTimeSeconds: number) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/track_edit/`,
+          {
+            session_id: sessionId,
+            field_name: fieldName,
+            original_value: originalValue,
+            new_value: newValue,
+            employee_index: employeeIndex,
+            edit_time_seconds: editTimeSeconds
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error tracking edit:", error);
+        throw error;
+      }
+    },
   },
 });
