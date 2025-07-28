@@ -19,6 +19,7 @@ services:
           property: connectionString
       - key: ALLOWED_HOSTS
         value: "*"
+    plan: free
 
 databases:
   - name: crew-scraper-db

@@ -5,8 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@mdi/font": "^7.4.47",
@@ -22,6 +23,7 @@
     "@vue/tsconfig": "^0.7.0",
     "typescript": "^5.8.3",
     "vite": "^7.0.4",
+    "vite-plugin-vue-type-imports": "^1.0.0",
     "vue-tsc": "^2.2.12"
   }
 }

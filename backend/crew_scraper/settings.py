@@ -76,7 +76,7 @@ WSGI_APPLICATION = 'crew_scraper.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.1/ref/settings/#databases
 
-# Default development settings (PostgreSQL)
+# Development settings (PostgreSQL)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -91,6 +91,7 @@ DATABASES = {
 # Override with production database settings if DATABASE_URL is set
 if 'DATABASE_URL' in os.environ:
     DATABASES['default'] = dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
         conn_max_age=600,
         conn_health_checks=True,
     )
