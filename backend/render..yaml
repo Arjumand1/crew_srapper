@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: crew-scraper-backend
+    env: python
+    buildCommand: "pip install -r requirements.txt && python manage.py migrate"
+    startCommand: "gunicorn crew_scraper.wsgi:application --log-file -"
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11"
+      - key: DJANGO_SETTINGS_MODULE
+        value: "crew_scraper.settings"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+        datastores:
+  - name: crew-scraper-db
+    databaseName: crewscraper
+    user: crewscraper
+    plan: free
