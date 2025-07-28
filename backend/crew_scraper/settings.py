@@ -52,7 +52,7 @@ MIDDLEWARE = [
 # CORS settings
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
-    'https://crew-srapper.vercel.app/'  # Update this with your production frontend URL
+    'https://crew-srapper.vercel.app'  # Update this with your production frontend URL
 ]
 CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in DEBUG mode for security
 
