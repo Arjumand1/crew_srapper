@@ -2,6 +2,7 @@ import os
 import datetime
 from pathlib import Path
 from dotenv import load_dotenv
+import dj_database_url
 
 # Load environment variables
 load_dotenv()
@@ -10,7 +11,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-default-key-change-me')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'change-me-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
@@ -30,6 +31,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'rest_framework',
     'corsheaders',
+    'rest_framework_simplejwt.token_blacklist',
     
     # Local apps
     'users',
@@ -48,8 +50,11 @@ MIDDLEWARE = [
 ]
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = ['http://localhost:5173']
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:5173',
+    'https://crew-srapper.vercel.app/'  # Update this with your production frontend URL
+]
+CORS_ALLOW_ALL_ORIGINS = DEBUG  # Only allow all origins in DEBUG mode for security
 
 ROOT_URLCONF = 'crew_scraper.urls'
 
@@ -72,16 +77,23 @@ TEMPLATES = [
 WSGI_APPLICATION = 'crew_scraper.wsgi.application'
 
 # Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'crewdb'),
-        'USER': os.environ.get('DB_USER', 'crewuser'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'crewpass'),
-        'HOST': os.environ.get('DB_HOST', 'db'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
+# Use DATABASE_URL from environment if available (for production)
+if 'DATABASE_URL' in os.environ:
+    DATABASES = {
+        'default': dj_database_url.parse(os.environ['DATABASE_URL'])
     }
-}
+else:
+    # Local development database settings
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.environ.get('DB_NAME', 'crewdb'),
+            'USER': os.environ.get('DB_USER', 'crewuser'),
+            'PASSWORD': os.environ.get('DB_PASSWORD', 'crewpass'),
+            'HOST': os.environ.get('DB_HOST', 'db'),
+            'PORT': os.environ.get('DB_PORT', '5432'),
+        }
+    }
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
