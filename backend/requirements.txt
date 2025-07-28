@@ -12,3 +12,4 @@ django-storages==1.14.2
 requests==2.31.0
 celery==5.3.6
 redis==5.0.1
+dj-database-url==2.1.0  # Added for database URL parsing

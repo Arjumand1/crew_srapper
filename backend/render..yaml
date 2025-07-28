@@ -13,8 +13,14 @@ services:
         generateValue: true
       - key: DEBUG
         value: "False"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crew-scraper-db
+          property: connectionString
+      - key: ALLOWED_HOSTS
+        value: "*"
 
-datastores:
+databases:
   - name: crew-scraper-db
     databaseName: crewscraper
     user: crewscraper

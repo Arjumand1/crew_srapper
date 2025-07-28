@@ -74,6 +74,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'crew_scraper.wsgi.application'
 
 # Database
+# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
+
+# Default development settings (PostgreSQL)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -84,6 +87,13 @@ DATABASES = {
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
+
+# Override with production database settings if DATABASE_URL is set
+if 'DATABASE_URL' in os.environ:
+    DATABASES['default'] = dj_database_url.config(
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -138,12 +148,3 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Use custom user model
 AUTH_USER_MODEL = 'users.CustomUser'
-
-if 'DATABASE_URL' in os.environ:
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
