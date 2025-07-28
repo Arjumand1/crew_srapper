@@ -30,28 +30,34 @@ class RegisterSerializer(serializers.ModelSerializer):
         return attrs
 
 
-def create(self, validated_data):
-    validated_data.pop('password2')
-    email_username = validated_data['email'].split('@')[0]
+    def create(self, validated_data):
+        # Remove password2 as it's not a model field
+        validated_data.pop('password2', None)
+        
+        # Extract the part before @ from email to use as base for username
+        email_username = validated_data['email'].split('@')[0]
+        
+        # Keep trying until we find an available username
+        max_attempts = 10
+        for _ in range(max_attempts):
+            # Generate a random 4-digit suffix
+            random_suffix = str(random.randint(1000, 9999))
+            username = f"{email_username}{random_suffix}"
 
-    # Keep trying until we find an available username
-    max_attempts = 10
-    for _ in range(max_attempts):
-        random_suffix = str(random.randint(1000, 9999))
-        username = f"{email_username}{random_suffix}"
+            # Check if username already exists
+            if not User.objects.filter(username=username).exists():
+                # Create the user with the validated data
+                user = User.objects.create(
+                    username=username,
+                    email=validated_data['email'],
+                    name=validated_data['name']
+                )
+                # Set the password (this will handle hashing)
+                user.set_password(validated_data['password'])
+                user.save()
+                return user
 
-        # Check if username already exists
-        if not User.objects.filter(username=username).exists():
-            user = User.objects.create(
-                username=username,
-                email=validated_data['email'],
-                name=validated_data['name'],
-            )
-            user.set_password(validated_data['password'])
-            user.save()
-            return user
-
-    # If we've exhausted all attempts, raise an error
-    raise serializers.ValidationError(
-        "Could not create a unique username. Please try again."
-    )
+        # If we've exhausted all attempts, raise an error
+        raise serializers.ValidationError(
+            "Could not create a unique username. Please try again with a different email."
+        )

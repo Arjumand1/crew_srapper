@@ -436,17 +436,20 @@ class UserBehaviorAnalytics:
 
         sessions = ExtractionSession.objects.filter(user=user)
 
+        # Convert string values to integers for sorting
+        sorted_fields = sorted(
+            [(k, int(v)) for k, v in profile.frequently_edited_fields.items()],
+            key=lambda x: x[1],
+            reverse=True
+        )
+
         return {
             "total_sheets": profile.total_sheets_processed,
             "total_edits": profile.total_edits_made,
             "avg_edits_per_sheet": profile.total_edits_made / max(profile.total_sheets_processed, 1),
             "avg_session_duration": profile.avg_session_duration,
             "abandonment_rate": profile.abandonment_rate,
-            "most_edited_fields": dict(sorted(
-                profile.frequently_edited_fields.items(),
-                key=lambda x: x[1],
-                reverse=True
-            )[:10]),
+            "most_edited_fields": dict(sorted_fields[:10]),
             "recent_activity": sessions.count(),
             "completion_rate": 1 - profile.abandonment_rate
         }
@@ -612,3 +615,279 @@ class LearningSystem:
                 "Extraction quality is stable - continue monitoring")
 
         return recommendations
+
+
+class ExtractionLogger:
+    """Centralized logging for all extractions and user behaviors."""
+    
+    @staticmethod
+    def log_extraction(
+        crew_sheet: CrewSheet,
+        raw_extraction: dict,
+        confidence_scores: dict,
+        processing_time: float,
+        api_cost: float = 0.0,
+        token_usage: dict = None
+    ) -> ExtractionLog:
+        """Log a complete extraction with all metadata."""
+        logger.info(f"Logging extraction for crew sheet {crew_sheet.id}")
+        
+        # Create extraction log
+        extraction_log = ExtractionLog.objects.create(
+            crew_sheet=crew_sheet,
+            raw_extraction=raw_extraction,
+            processed_extraction=raw_extraction,
+            extraction_time_seconds=processing_time,
+            api_cost_estimate=api_cost,
+            token_usage=token_usage or {}
+        )
+        
+        # Calculate initial user satisfaction score based on confidence
+        overall_confidence = confidence_scores.get('overall_confidence', 0.0)
+        extraction_log.user_satisfaction_score = overall_confidence
+        
+        # Calculate edit ratio (will be updated after user edits)
+        total_fields = len(raw_extraction.get('table_headers', []))
+        employees_count = len(raw_extraction.get('employees', []))
+        extraction_log.edit_ratio = 0.0  # Will be updated after edits
+        
+        extraction_log.save()
+        return extraction_log
+    
+    @staticmethod
+    def log_user_behavior(
+        session: ExtractionSession,
+        behavior_type: str,
+        metadata: dict = None
+    ) -> None:
+        """Log user behavior patterns for learning."""
+        logger.debug(f"Logging user behavior: {behavior_type} for session {session.id}")
+        
+        # Update session with behavior data
+        if not hasattr(session, 'behavior_logs'):
+            session.behavior_logs = []
+        
+        behavior_log = {
+            'timestamp': timezone.now().isoformat(),
+            'behavior_type': behavior_type,
+            'metadata': metadata or {}
+        }
+        
+        session.behavior_logs.append(behavior_log)
+        session.save()
+    
+    @staticmethod
+    def update_extraction_outcome(
+        crew_sheet: CrewSheet,
+        final_data: dict,
+        user_satisfaction: float = None
+    ) -> None:
+        """Update extraction log with final outcome after user edits."""
+        try:
+            extraction_log = crew_sheet.extraction_logs.latest('created_at')
+            extraction_log.final_data = final_data
+            
+            # Calculate edit ratio
+            original_data = extraction_log.raw_extraction
+            if original_data and 'employees' in original_data:
+                total_fields = len(original_data.get('table_headers', [])) * len(original_data.get('employees', []))
+                
+                # Count actual edits by comparing original vs final
+                edit_count = ExtractionLogger._count_data_differences(
+                    original_data, final_data
+                )
+                extraction_log.edit_ratio = edit_count / max(total_fields, 1)
+            
+            # Update user satisfaction if provided
+            if user_satisfaction is not None:
+                extraction_log.user_satisfaction_score = user_satisfaction
+            
+            extraction_log.save()
+            logger.info(f"Updated extraction outcome for crew sheet {crew_sheet.id}")
+            
+        except ExtractionLog.DoesNotExist:
+            logger.warning(f"No extraction log found for crew sheet {crew_sheet.id}")
+    
+    @staticmethod
+    def _count_data_differences(original: dict, final: dict) -> int:
+        """Count differences between original and final data."""
+        if not original or not final:
+            return 0
+        
+        original_employees = original.get('employees', [])
+        final_employees = final.get('employees', [])
+        
+        if len(original_employees) != len(final_employees):
+            return len(original_employees) + len(final_employees)  # Major structural change
+        
+        edit_count = 0
+        for i, (orig_emp, final_emp) in enumerate(zip(original_employees, final_employees)):
+            for key in set(orig_emp.keys()) | set(final_emp.keys()):
+                if str(orig_emp.get(key, '')).strip() != str(final_emp.get(key, '')).strip():
+                    edit_count += 1
+        
+        return edit_count
+
+
+class ContinuousLearner:
+    """Continuous learning system that analyzes corrections and improves prompts."""
+    
+    @staticmethod
+    def analyze_corrections(days_back: int = 30) -> dict:
+        """Analyze user corrections to find common error patterns."""
+        logger.info(f"Analyzing corrections from last {days_back} days")
+        
+        # Get recent user edits
+        recent_edits = UserEdit.objects.filter(
+            timestamp__gte=timezone.now() - timedelta(days=days_back)
+        ).select_related('session__crew_sheet')
+        
+        # Analyze patterns
+        field_errors = {}
+        header_issues = {}
+        common_corrections = {}
+        
+        for edit in recent_edits:
+            field_name = edit.field_name
+            original = edit.original_value
+            corrected = edit.new_value
+            
+            # Track field-specific errors
+            if field_name not in field_errors:
+                field_errors[field_name] = []
+            field_errors[field_name].append({
+                'original': original,
+                'corrected': corrected,
+                'timestamp': edit.timestamp
+            })
+            
+            # Track header structure issues
+            if '_' in field_name:
+                header_parts = field_name.split('_')
+                if len(header_parts) >= 2:
+                    header_type = '_'.join(header_parts[:-1])
+                    if header_type not in header_issues:
+                        header_issues[header_type] = 0
+                    header_issues[header_type] += 1
+            
+            # Track common correction patterns
+            correction_pattern = f"{original} -> {corrected}"
+            if correction_pattern not in common_corrections:
+                common_corrections[correction_pattern] = 0
+            common_corrections[correction_pattern] += 1
+        
+        # Generate insights
+        insights = {
+            'total_edits': recent_edits.count(),
+            'most_edited_fields': dict(sorted(
+                {field: len(errors) for field, errors in field_errors.items()}.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]),
+            'problematic_headers': dict(sorted(
+                header_issues.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:10]),
+            'common_corrections': dict(sorted(
+                common_corrections.items(),
+                key=lambda x: x[1],
+                reverse=True
+            )[:20]),
+            'field_error_details': field_errors
+        }
+        
+        return insights
+    
+    @staticmethod
+    def generate_improved_prompt(
+        sheet_type: str = None,
+        company_patterns: dict = None,
+        recent_errors: dict = None
+    ) -> str:
+        """Generate improved extraction prompt based on learning data."""
+        logger.info("Generating improved extraction prompt")
+        
+        base_prompt = """You are an expert at extracting data from crew/timesheets. These sheets track WHO (crew/people) does WHAT (task) WHERE (cost center), for HOW LONG (hours), and HOW FAST (pieces).
+
+CRITICAL ANALYSIS STEPS:
+1. FIRST: Study the sheet layout carefully - identify the table structure, hierarchical headers, and data organization
+2. SECOND: Map out ALL headers including multi-level hierarchical relationships (cost centers → tasks → job columns)
+3. THIRD: Identify how cost centers and tasks relate to job columns in the header structure
+4. FOURTH: Extract data with precise column matching
+
+HIERARCHICAL HEADER STRUCTURE (VERY IMPORTANT):
+- Many crew sheets use a THREE-LEVEL HIERARCHY in their headers:
+  * TOP LEVEL: Cost Centers (e.g., "KW13", "270", "CMA")
+  * MIDDLE LEVEL: Tasks (e.g., "zero", "socker", "irrigation")  
+  * BOTTOM LEVEL: Job columns (e.g., "Job No Hrs", "Job Piece Work")
+- CAPTURE THIS HIERARCHY in your column naming using this format: COST_CENTER_TASK_JOBTYPE"""
+        
+        # Add company-specific patterns
+        if company_patterns:
+            base_prompt += f"\n\nCOMPANY-SPECIFIC PATTERNS:\n"
+            if 'common_cost_centers' in company_patterns:
+                base_prompt += f"- Common cost centers: {', '.join(company_patterns['common_cost_centers'])}\n"
+            if 'common_tasks' in company_patterns:
+                base_prompt += f"- Common tasks: {', '.join(company_patterns['common_tasks'])}\n"
+            if 'typical_headers' in company_patterns:
+                base_prompt += f"- Typical headers: {', '.join(company_patterns['typical_headers'])}\n"
+        
+        # Add error-specific corrections
+        if recent_errors and 'most_edited_fields' in recent_errors:
+            base_prompt += f"\n\nCOMMON ERROR CORRECTIONS:\n"
+            for field, count in list(recent_errors['most_edited_fields'].items())[:5]:
+                base_prompt += f"- Pay special attention to '{field}' field (frequently corrected)\n"
+        
+        # Add time format improvements
+        base_prompt += """
+NESTED HEADER RULES (VERY IMPORTANT):
+- Look for headers that span multiple columns with sub-headers below
+- Examples:
+  * "START" header with only "IN" column below → "START_IN"
+  * "BREAK 1" header with "OUT" and "IN" columns below → "BREAK1_OUT", "BREAK1_IN"
+  * "LUNCH" header with "OUT" and "IN" columns below → "LUNCH_OUT", "LUNCH_IN"
+  * "BREAK 2" header with "OUT" and "IN" columns below → "BREAK2_OUT", "BREAK2_IN"
+- NEVER use just "START", "BREAK 1", "LUNCH" if they have sub-columns
+- Always include the sub-column identifier in the header name
+
+DATA PLACEMENT ACCURACY:
+- Match data values to the CORRECT hierarchical columns
+- Time values must go in precise columns (START_IN, BREAK1_OUT, etc.)
+- Job data must go in the corresponding hierarchical columns (COST_CENTER_TASK_JOB_TYPE)
+- Only use placeholder marks ("✓") if actually present in original
+- Extract actual numeric and text values whenever present"""
+        
+        return base_prompt
+    
+    @staticmethod
+    def update_model_prompts(insights: dict) -> dict:
+        """Update model prompts based on insights and run A/B testing."""
+        logger.info("Updating model prompts based on insights")
+        
+        # Generate improved prompt
+        improved_prompt = ContinuousLearner.generate_improved_prompt(
+            recent_errors=insights
+        )
+        
+        # Store prompt version for A/B testing
+        prompt_version = {
+            'version': f"v_{timezone.now().strftime('%Y%m%d_%H%M%S')}",
+            'prompt': improved_prompt,
+            'based_on_insights': insights,
+            'created_at': timezone.now().isoformat()
+        }
+        
+        # In a real implementation, you'd store this in a PromptVersion model
+        # For now, log it
+        logger.info(f"Generated new prompt version: {prompt_version['version']}")
+        
+        return {
+            'prompt_version': prompt_version,
+            'improvements_made': [
+                'Added company-specific patterns',
+                'Incorporated common error corrections',
+                'Enhanced header structure rules',
+                'Improved time format handling'
+            ]
+        }

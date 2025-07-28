@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import CrewSheet, ExtractionSession, UserEdit, QualityAssessment
+from .models import CrewSheet, ExtractionSession, UserEdit, QualityAssessment, SheetTemplate
 
 
 class CrewSheetSerializer(serializers.ModelSerializer):
@@ -126,3 +126,16 @@ class QualityAssessmentSerializer(serializers.ModelSerializer):
                  'issues_detected', 'validation_errors', 
                  'assessed_at', 'assessment_version')
         read_only_fields = ('id', 'assessed_at')
+
+
+class SheetTemplateSerializer(serializers.ModelSerializer):
+    """Serializer for sheet templates."""
+    
+    class Meta:
+        model = SheetTemplate
+        fields = ('id', 'name', 'description', 'company', 'template_image',
+                 'header_structure', 'expected_fields', 'template_type',
+                 'usage_count', 'success_rate', 'created_at', 'updated_at',
+                 'is_active')
+        read_only_fields = ('id', 'created_at', 'updated_at', 'usage_count',
+                           'success_rate')

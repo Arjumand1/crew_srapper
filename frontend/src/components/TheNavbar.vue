@@ -26,6 +26,10 @@
             <v-icon size="small" class="mr-1">mdi-chart-line</v-icon>
             Analytics
           </a>
+          <a @click="navigateTo('profile')" class="text-body-1 text-grey-lighten-3 text-decoration-none cursor-pointer">
+            <v-icon size="small" class="mr-1">mdi-account-circle</v-icon>
+            Profile
+          </a>
           <v-btn @click="logout" color="error" variant="outlined" size="small" class="text-body-1 bg-white">
             Logout
           </v-btn>
@@ -61,6 +65,12 @@
             <v-list-item-title>
               <v-icon size="small" class="mr-2">mdi-chart-line</v-icon>
               Analytics
+            </v-list-item-title>
+          </v-list-item>
+          <v-list-item @click="navigateTo('profile')">
+            <v-list-item-title>
+              <v-icon size="small" class="mr-2">mdi-account-circle</v-icon>
+              Profile
             </v-list-item-title>
           </v-list-item>
           <v-list-item @click="logout">

@@ -238,18 +238,25 @@ export const useCrewSheetStore = defineStore("crewSheets", {
       }
     },
 
-    async trackEdit(sessionId: string, fieldName: string, originalValue: any, newValue: any, employeeIndex: number | null = null, editTimeSeconds: number) {
+    async trackEdit(
+      sessionId: string,
+      fieldName: string,
+      originalValue: any,
+      newValue: any,
+      employeeIndex: number | null = null,
+      editTimeSeconds: number
+    ) {
       try {
         const authStore = useAuthStore();
         const response = await axios.post(
-          `${API_URL}/crew-sheets/track_edit/`,
+          `${API_URL}/track_edit/`,
           {
             session_id: sessionId,
             field_name: fieldName,
             original_value: originalValue,
             new_value: newValue,
             employee_index: employeeIndex,
-            edit_time_seconds: editTimeSeconds
+            edit_time_seconds: editTimeSeconds,
           },
           {
             headers: {
@@ -260,6 +267,303 @@ export const useCrewSheetStore = defineStore("crewSheets", {
         return response.data;
       } catch (error: any) {
         console.error("Error tracking edit:", error);
+        throw error;
+      }
+    },
+
+    // AI Enhancement Methods
+    async getTemplateSuggestions() {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.get(`${API_URL}/template_suggestions/`, {
+          headers: {
+            Authorization: `Bearer ${authStore.accessToken}`,
+          },
+        });
+        return response.data.suggestions || [];
+      } catch (error: any) {
+        this.error =
+          error.response?.data?.detail || "Failed to get template suggestions";
+        console.error("Error getting template suggestions:", error);
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async processWithTemplate(id: string, templateId: string) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/${id}/process_with_template/`,
+          { template_id: templateId },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+
+        // Update the processed sheet
+        const processedSheet = response.data;
+        const index = this.crewSheets.findIndex((sheet) => sheet.id === id);
+        if (index !== -1) {
+          this.crewSheets[index] = processedSheet;
+        }
+        if (this.currentCrewSheet?.id === id) {
+          this.currentCrewSheet = processedSheet;
+        }
+
+        return processedSheet;
+      } catch (error: any) {
+        this.error =
+          error.response?.data?.detail || "Failed to process with template";
+        console.error("Error processing with template:", error);
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async processWithAI(id: string) {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/${id}/process_with_template/`,
+          { use_rag: true },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+
+        // Update the processed sheet
+        const processedSheet = response.data;
+        const index = this.crewSheets.findIndex((sheet) => sheet.id === id);
+        if (index !== -1) {
+          this.crewSheets[index] = processedSheet;
+        }
+        if (this.currentCrewSheet?.id === id) {
+          this.currentCrewSheet = processedSheet;
+        }
+
+        return processedSheet;
+      } catch (error: any) {
+        this.error =
+          error.response?.data?.detail || "Failed to process with AI";
+        console.error("Error processing with AI:", error);
+        throw error;
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    async getReviewQueue() {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.get(
+          `${API_URL}/crew-sheets/review_queue/`,
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error getting review queue:", error);
+        throw error;
+      }
+    },
+
+    async getLearningInsights() {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.get(
+          `${API_URL}/crew-sheets/learning_insights/`,
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error getting learning insights:", error);
+        throw error;
+      }
+    },
+
+    // Company Learning Profile Methods
+    async getCompanyLearningProfile() {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.get(
+          `${API_URL}/crew-sheets/company_learning_profile/`,
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error getting company learning profile:", error);
+        throw error;
+      }
+    },
+
+    async addCostCenter(costCenter: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/add_cost_center/`,
+          { cost_center: costCenter },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error adding cost center:", error);
+        throw error;
+      }
+    },
+
+    async addTask(task: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/add_task/`,
+          { task: task },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error adding task:", error);
+        throw error;
+      }
+    },
+
+    async removeCostCenter(costCenter: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/remove_cost_center/`,
+          { cost_center: costCenter },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error removing cost center:", error);
+        throw error;
+      }
+    },
+
+    async removeTask(task: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/remove_task/`,
+          { task: task },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error removing task:", error);
+        throw error;
+      }
+    },
+
+    // Template Management Methods
+    async getAllTemplates() {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.get(`${API_URL}/templates/`, {
+          headers: {
+            Authorization: `Bearer ${authStore.accessToken}`,
+          },
+        });
+        return response.data;
+      } catch (error: any) {
+        console.error("Error fetching templates:", error);
+        throw error;
+      }
+    },
+
+    async createTemplate(formData: FormData) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(`${API_URL}/templates/`, formData, {
+          headers: {
+            Authorization: `Bearer ${authStore.accessToken}`,
+            "Content-Type": "multipart/form-data",
+          },
+        });
+        return response.data;
+      } catch (error: any) {
+        console.error("Error creating template:", error);
+        throw error;
+      }
+    },
+
+    async updateTemplate(id: number, data: any) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.put(
+          `${API_URL}/crew-sheets/templates/${id}/`,
+          data,
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error updating template:", error);
+        throw error;
+      }
+    },
+
+    async deleteTemplate(id: number) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.delete(
+          `${API_URL}/crew-sheets/templates/${id}/`,
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error deleting template:", error);
         throw error;
       }
     },

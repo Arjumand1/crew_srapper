@@ -202,3 +202,181 @@ class ExtractionLog(models.Model):
 
     class Meta:
         ordering = ['-created_at']
+
+
+class SheetTemplate(models.Model):
+    """Store sample sheet templates for improved extraction."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    
+    # Template metadata
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    company = models.CharField(max_length=255, blank=True)
+    
+    # Template structure
+    template_image = models.ImageField(upload_to='templates/')
+    header_structure = models.JSONField()  # Parsed header structure
+    expected_fields = models.JSONField()   # List of expected field names
+    
+    # Template classification
+    TEMPLATE_TYPES = [
+        ('time_tracking', 'Time Tracking'),
+        ('piece_work', 'Piece Work'),
+        ('mixed', 'Mixed Time/Piece'),
+        ('custom', 'Custom'),
+    ]
+    template_type = models.CharField(max_length=20, choices=TEMPLATE_TYPES)
+    
+    # Usage metrics
+    usage_count = models.IntegerField(default=0)
+    success_rate = models.FloatField(default=0.0)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_active = models.BooleanField(default=True)
+    
+    class Meta:
+        ordering = ['-success_rate', '-usage_count']
+    
+    def __str__(self):
+        return f"{self.name} ({self.company})"
+
+
+class ExtractionExample(models.Model):
+    """Store successful extraction examples for RAG/few-shot learning."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    # Source information
+    crew_sheet = models.ForeignKey(CrewSheet, on_delete=models.CASCADE)
+    template = models.ForeignKey(SheetTemplate, on_delete=models.SET_NULL, null=True, blank=True)
+    
+    # Extraction data
+    input_description = models.TextField()  # Description of the input sheet
+    extraction_result = models.JSONField()  # The successful extraction
+    user_corrections = models.JSONField(default=dict)  # Any user corrections applied
+    
+    # Quality metrics
+    confidence_score = models.FloatField()
+    edit_ratio = models.FloatField()  # Ratio of fields edited by user
+    user_satisfaction = models.FloatField(default=0.0)
+    
+    # Embeddings for similarity search
+    embedding = models.JSONField(null=True, blank=True)  # Vector embedding
+    
+    # Classification
+    sheet_characteristics = models.JSONField(default=dict)  # Layout, complexity, etc.
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    is_high_quality = models.BooleanField(default=False)  # Manually curated examples
+    
+    class Meta:
+        ordering = ['-confidence_score', '-user_satisfaction']
+
+
+class SmartReviewQueue(models.Model):
+    """Intelligent queue for sheets that need review."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    crew_sheet = models.OneToOneField(CrewSheet, on_delete=models.CASCADE)
+    
+    # Priority scoring
+    priority_score = models.FloatField(default=0.0)
+    
+    # Reasons for review
+    REVIEW_REASONS = [
+        ('low_confidence', 'Low Confidence Score'),
+        ('validation_failed', 'Validation Rules Failed'),
+        ('unusual_format', 'Unusual Format Detected'),
+        ('high_edit_frequency', 'High Edit Frequency Expected'),
+        ('user_requested', 'User Requested Review'),
+        ('template_mismatch', 'Template Mismatch'),
+    ]
+    review_reason = models.CharField(max_length=30, choices=REVIEW_REASONS)
+    
+    # Review details
+    flagged_issues = models.JSONField(default=list)
+    suggested_actions = models.JSONField(default=list)
+    
+    # Review status
+    STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('skipped', 'Skipped'),
+    ]
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    
+    # Assignment
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True,
+        related_name='assigned_reviews'
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-priority_score', '-created_at']
+
+
+class CompanyLearningProfile(models.Model):
+    """Learn company-specific patterns for better extraction."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    
+    # Company identification
+    company_name = models.CharField(max_length=255, blank=True)
+    company_domain = models.CharField(max_length=100, blank=True)  # email domain
+    
+    # Learned patterns
+    common_cost_centers = models.JSONField(default=list)
+    common_tasks = models.JSONField(default=list)
+    typical_headers = models.JSONField(default=list)
+    header_variations = models.JSONField(default=dict)  # Common variations
+    
+    # Time patterns
+    typical_start_times = models.JSONField(default=list)
+    typical_break_patterns = models.JSONField(default=list)
+    time_format_preferences = models.JSONField(default=dict)
+    
+    # Data patterns
+    employee_name_patterns = models.JSONField(default=dict)
+    common_job_codes = models.JSONField(default=list)
+    typical_hour_ranges = models.JSONField(default=dict)
+    
+    # Learning metrics
+    sheets_processed = models.IntegerField(default=0)
+    accuracy_improvement = models.FloatField(default=0.0)
+    confidence_in_patterns = models.FloatField(default=0.0)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['user', 'company_name']
+
+
+class PromptVersion(models.Model):
+    """Track different prompt versions for A/B testing."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    
+    version_name = models.CharField(max_length=100)
+    prompt_content = models.TextField()
+    
+    # Performance metrics
+    usage_count = models.IntegerField(default=0)
+    success_rate = models.FloatField(default=0.0)
+    avg_confidence = models.FloatField(default=0.0)
+    avg_edit_ratio = models.FloatField(default=0.0)
+    
+    # Versioning
+    based_on_insights = models.JSONField(default=dict)
+    is_active = models.BooleanField(default=True)
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['-success_rate', '-created_at']

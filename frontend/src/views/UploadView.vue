@@ -56,6 +56,26 @@
                   Supported formats: JPEG, PNG, GIF, BMP
                 </div>
               </v-col>
+              <v-col cols="12" class="mb-4">
+                <v-select
+                  v-model="form.templateId"
+                  :items="templates"
+                  item-title="name"
+                  item-value="id"
+                  label="Sheet Template (optional)"
+                  placeholder="Select a template to improve extraction accuracy"
+                  variant="outlined"
+                  :loading="templatesLoading"
+                  :disabled="templatesLoading"
+                  persistent-hint
+                  hint="Selecting a template can improve extraction accuracy"
+                  clearable
+                >
+                  <template v-slot:prepend-inner>
+                    <v-icon color="primary">mdi-file-table-outline</v-icon>
+                  </template>
+                </v-select>
+              </v-col>
               <v-col cols="12" v-if="imagePreview">
                 <v-sheet
                   class="pa-4 mb-4 d-flex justify-center align-center"
@@ -94,7 +114,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive } from "vue";
+import { ref, reactive, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import { useCrewSheetStore } from "../stores/crewSheets";
 
@@ -110,11 +130,31 @@ const crewSheetStore = useCrewSheetStore();
 const form = reactive({
   name: "",
   image: null as File | null,
+  templateId: null as string | null,
 });
 
 const imagePreview = ref<string | null>(null);
 const loading = ref(false);
 const error = ref<string | null>(null);
+const templates = ref<{ id: string; name: string }[]>([]);
+const templatesLoading = ref(false);
+
+// Fetch available templates when component mounts
+onMounted(async () => {
+  try {
+    templatesLoading.value = true;
+    const allTemplates = await crewSheetStore.getAllTemplates();
+    templates.value = allTemplates.map((template: any) => ({
+      id: template.id || template.template_id,
+      name: template.name,
+    }));
+  } catch (err) {
+    console.error("Error fetching templates:", err);
+    error.value = "Failed to load templates";
+  } finally {
+    templatesLoading.value = false;
+  }
+});
 
 const handleFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement;
@@ -146,8 +186,18 @@ const handleSubmit = async () => {
     if (form.name) {
       formData.append("name", form.name);
     }
+    
+    // Add template ID if one was selected
+    if (form.templateId) {
+      formData.append("template_id", form.templateId);
+    }
 
     const response = await crewSheetStore.uploadCrewSheet(formData);
+    
+    // If a template was selected, process the sheet with that template
+    if (form.templateId && response.id) {
+      await crewSheetStore.processWithTemplate(response.id, form.templateId);
+    }
 
     // Navigate to the sheet detail page
     router.push({ name: "crewSheet", params: { id: response.id } });
