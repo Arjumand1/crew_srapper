@@ -2,7 +2,6 @@ import os
 import datetime
 from pathlib import Path
 from dotenv import load_dotenv
-import dj_database_url
 
 # Load environment variables
 load_dotenv()
@@ -11,8 +10,7 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get(
-    'SECRET_KEY', 'django-insecure-default-key-change-me')
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-default-key-change-me')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True') == 'True'
@@ -28,11 +26,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-
+    
     # Third-party apps
     'rest_framework',
     'corsheaders',
-
+    
     # Local apps
     'users',
     'crew_sheets',
@@ -50,7 +48,7 @@ MIDDLEWARE = [
 ]
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = ['http://localhost:5173', "*"]
+CORS_ALLOWED_ORIGINS = ['http://localhost:5173']
 CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'crew_scraper.urls'
@@ -74,9 +72,6 @@ TEMPLATES = [
 WSGI_APPLICATION = 'crew_scraper.wsgi.application'
 
 # Database
-# https://docs.djangoproject.com/en/5.1/ref/settings/#databases
-
-# Development settings (PostgreSQL)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -87,14 +82,6 @@ DATABASES = {
         'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
-
-# Override with production database settings if DATABASE_URL is set
-if 'DATABASE_URL' in os.environ:
-    DATABASES['default'] = dj_database_url.config(
-        default=os.environ.get('DATABASE_URL'),
-        conn_max_age=600,
-        conn_health_checks=True,
-    )
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -124,8 +111,11 @@ REST_FRAMEWORK = {
 
 # JWT settings
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(minutes=60),
-    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(days=90),  # 90 days
+    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=365),  # 1 year
+    'ROTATE_REFRESH_TOKENS': True,  # Issue new refresh token on refresh
+    'BLACKLIST_AFTER_ROTATION': True,  # Blacklist old refresh tokens
+    'UPDATE_LAST_LOGIN': True,  # Update last login time on token refresh
 }
 
 # Internationalization
