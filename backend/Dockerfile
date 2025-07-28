@@ -16,13 +16,29 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Create entrypoint script
+RUN echo '#!/bin/bash\
+set -e\
+\
+# Wait for the database to be ready\
+if [ "$DATABASE" = "postgres" ]\
+then\
+    echo "Waiting for PostgreSQL..."\
+    while ! nc -z "$DB_HOST" "$DB_PORT"; do\
+        sleep 0.1\
+    done\
+    echo "PostgreSQL is ready"\
+fi\
+\
+# Run migrations and collect static files\
+python manage.py migrate --noinput\
+python manage.py collectstatic --noinput\n\
+# Start the server\
+exec "$@"' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
 # Copy project
 COPY . .
-
-# Create a script to run migrations and start the server
-RUN echo '#!/bin/sh\n\
-# Wait for the database to be ready\nif [ "$DATABASE" = "postgres" ]\nthen\n    echo "Waiting for PostgreSQL..."\n    while ! nc -z $DB_HOST $DB_PORT; do\n        sleep 0.1\n    done\n    echo "PostgreSQL is ready"\nfi\n\n# Run migrations and collect static files\npython manage.py migrate --noinput\npython manage.py collectstatic --noinput\n\n# Start the server\nexec "$@"' > /entrypoint.sh \
-    && chmod +x /entrypoint.sh
 
 # Expose port for the Django app
 EXPOSE 8000
