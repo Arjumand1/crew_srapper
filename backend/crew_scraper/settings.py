@@ -50,7 +50,7 @@ MIDDLEWARE = [
 ]
 
 # CORS settings
-CORS_ALLOWED_ORIGINS = ['http://localhost:5173']
+CORS_ALLOWED_ORIGINS = ['http://localhost:5173', "*"]
 CORS_ALLOW_ALL_ORIGINS = True
 
 ROOT_URLCONF = 'crew_scraper.urls'

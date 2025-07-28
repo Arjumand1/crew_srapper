@@ -7,7 +7,7 @@ django-cors-headers==4.3.1
 djangorestframework-simplejwt==5.3.0
 openai==1.6.0
 httpx==0.24.1
-pillow==10.2.0
+pillow>=10.4.0  # Updated to a version compatible with Python 3.13
 django-storages==1.14.2
 requests==2.31.0
 celery==5.3.6

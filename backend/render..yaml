@@ -6,14 +6,15 @@ services:
     startCommand: "gunicorn crew_scraper.wsgi:application --log-file -"
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11"  # Changed from 3.13 to 3.11 for better compatibility
       - key: DJANGO_SETTINGS_MODULE
         value: "crew_scraper.settings"
       - key: SECRET_KEY
         generateValue: true
       - key: DEBUG
         value: "False"
-        datastores:
+
+datastores:
   - name: crew-scraper-db
     databaseName: crewscraper
     user: crewscraper
