@@ -499,6 +499,45 @@ export const useCrewSheetStore = defineStore("crewSheets", {
       }
     },
 
+    // Crew Member Management Methods
+    async addCrewMember(crewName: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/add_crew_member/`,
+          { crew_name: crewName },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error adding crew member:", error);
+        throw error;
+      }
+    },
+
+    async removeCrewMember(crewName: string) {
+      try {
+        const authStore = useAuthStore();
+        const response = await axios.post(
+          `${API_URL}/crew-sheets/remove_crew_member/`,
+          { crew_name: crewName },
+          {
+            headers: {
+              Authorization: `Bearer ${authStore.accessToken}`,
+            },
+          }
+        );
+        return response.data;
+      } catch (error: any) {
+        console.error("Error removing crew member:", error);
+        throw error;
+      }
+    },
+
     // Template Management Methods
     async getAllTemplates() {
       try {

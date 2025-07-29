@@ -3,16 +3,18 @@ Analytics and Quality Assessment Services for Crew Sheet Extraction
 Implements Phase 1: Implicit Feedback Collection
 """
 import re
-import json
 import logging
-from typing import Dict, List, Tuple, Optional
-from datetime import datetime, timedelta
+from typing import List, Tuple, Optional
+from datetime import timedelta
 from django.utils import timezone
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count
 from .models import (
     CrewSheet, ExtractionSession, FieldConfidence, UserEdit,
     QualityAssessment, UserProfile, ExtractionLog
 )
+from .enhanced_confidence import EnhancedConfidenceScorer
+from .realtime_learning import RealTimeLearningEngine
+from .context_aware_validation import ContextAwareValidator
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +351,7 @@ class UserBehaviorAnalytics:
         edit_type: str = 'field_edit',
         edit_time_seconds: Optional[float] = None
     ) -> UserEdit:
-        """Track a user edit."""
+        """Track a user edit with real-time learning."""
         edit = UserEdit.objects.create(
             session=session,
             field_name=field_name,
@@ -372,6 +374,18 @@ class UserBehaviorAnalytics:
             ).total_seconds()
 
         session.save()
+
+        # Process real-time learning feedback
+        try:
+            feedback_result = RealTimeLearningEngine.process_user_feedback(
+                user_edit=edit,
+                immediate_update=True
+            )
+            logger.info(
+                f"Real-time learning processed for field {field_name}: {len(feedback_result.get('learning_updates', []))} updates")
+        except Exception as e:
+            logger.warning(
+                f"Real-time learning failed for edit {edit.id}: {str(e)}")
 
         logger.debug(f"Tracked edit in session {session.id}: {field_name}")
         return edit
@@ -461,9 +475,73 @@ class LearningSystem:
     @staticmethod
     def process_extraction(crew_sheet: CrewSheet, raw_extraction: dict) -> dict:
         """Process a new extraction through the learning pipeline."""
-        # Quality assessment
+        # Enhanced quality assessment
         confidence_score, issues = QualityValidator.validate_extraction(
             raw_extraction, crew_sheet)
+
+        # Get enhanced confidence scoring if available
+        enhanced_confidence_result = None
+        try:
+            from .models import SheetTemplate, CompanyLearningProfile
+
+            # Get template and company profile
+            template = None
+            company_profile = None
+
+            # Try to get template from extraction metadata
+            extraction_metadata = raw_extraction.get('extraction_metadata', {})
+            template_used = extraction_metadata.get('template_used')
+            if template_used:
+                try:
+                    template = SheetTemplate.objects.get(
+                        id=template_used['id'])
+                except (SheetTemplate.DoesNotExist, KeyError):
+                    pass
+
+            # Get company profile
+            try:
+                company_profile = CompanyLearningProfile.objects.get(
+                    user=crew_sheet.user)
+            except CompanyLearningProfile.DoesNotExist:
+                pass
+
+            # Calculate enhanced confidence
+            enhanced_confidence_result = EnhancedConfidenceScorer.calculate_enhanced_confidence(
+                extraction_result=raw_extraction,
+                crew_sheet=crew_sheet,
+                template=template,
+                company_profile=company_profile
+            )
+
+            # Apply context-aware validation
+            context_validation_result = None
+            try:
+                context_validation_result = ContextAwareValidator.validate_extraction_with_context(
+                    extraction_result=raw_extraction,
+                    crew_sheet=crew_sheet,
+                    template=template,
+                    company_profile=company_profile
+                )
+
+                if context_validation_result and 'adjusted_confidence' in context_validation_result:
+                    # Use context-aware adjusted confidence
+                    confidence_score = context_validation_result['adjusted_confidence']
+                    logger.info(
+                        f"Using context-aware confidence score: {confidence_score:.3f}")
+                elif enhanced_confidence_result:
+                    confidence_score = enhanced_confidence_result['overall_confidence']
+                    logger.info(
+                        f"Using enhanced confidence score: {confidence_score:.3f}")
+            except Exception as e:
+                logger.warning(f"Context-aware validation failed: {str(e)}")
+                if enhanced_confidence_result:
+                    confidence_score = enhanced_confidence_result['overall_confidence']
+                    logger.info(
+                        f"Using enhanced confidence score: {confidence_score:.3f}")
+
+        except Exception as e:
+            logger.warning(
+                f"Enhanced confidence scoring failed, using basic: {str(e)}")
 
         # Update crew sheet with confidence metrics
         crew_sheet.confidence_score = confidence_score
@@ -492,12 +570,32 @@ class LearningSystem:
             processed_extraction=raw_extraction  # Could be different after processing
         )
 
-        return {
+        result = {
             "confidence_score": confidence_score,
             "needs_review": crew_sheet.needs_review,
             "issues": issues,
             "processed_data": raw_extraction
         }
+
+        # Add enhanced confidence data if available
+        if enhanced_confidence_result:
+            result.update({
+                "enhanced_confidence": enhanced_confidence_result,
+                "confidence_level": enhanced_confidence_result.get('confidence_level'),
+                "quality_indicators": enhanced_confidence_result.get('quality_indicators'),
+                "review_priority": enhanced_confidence_result.get('review_priority')
+            })
+
+        # Add context validation data if available
+        if context_validation_result:
+            result.update({
+                "context_validation": context_validation_result,
+                "validation_corrections": context_validation_result.get('validation_corrections', []),
+                "context_insights": context_validation_result.get('context_insights', []),
+                "accuracy_improvements": context_validation_result.get('accuracy_improvements', [])
+            })
+
+        return result
 
     @staticmethod
     def _calculate_completeness(extraction: dict) -> float:
@@ -619,7 +717,7 @@ class LearningSystem:
 
 class ExtractionLogger:
     """Centralized logging for all extractions and user behaviors."""
-    
+
     @staticmethod
     def log_extraction(
         crew_sheet: CrewSheet,
@@ -631,7 +729,7 @@ class ExtractionLogger:
     ) -> ExtractionLog:
         """Log a complete extraction with all metadata."""
         logger.info(f"Logging extraction for crew sheet {crew_sheet.id}")
-        
+
         # Create extraction log
         extraction_log = ExtractionLog.objects.create(
             crew_sheet=crew_sheet,
@@ -641,19 +739,19 @@ class ExtractionLogger:
             api_cost_estimate=api_cost,
             token_usage=token_usage or {}
         )
-        
+
         # Calculate initial user satisfaction score based on confidence
         overall_confidence = confidence_scores.get('overall_confidence', 0.0)
         extraction_log.user_satisfaction_score = overall_confidence
-        
+
         # Calculate edit ratio (will be updated after user edits)
         total_fields = len(raw_extraction.get('table_headers', []))
         employees_count = len(raw_extraction.get('employees', []))
         extraction_log.edit_ratio = 0.0  # Will be updated after edits
-        
+
         extraction_log.save()
         return extraction_log
-    
+
     @staticmethod
     def log_user_behavior(
         session: ExtractionSession,
@@ -661,21 +759,22 @@ class ExtractionLogger:
         metadata: dict = None
     ) -> None:
         """Log user behavior patterns for learning."""
-        logger.debug(f"Logging user behavior: {behavior_type} for session {session.id}")
-        
+        logger.debug(
+            f"Logging user behavior: {behavior_type} for session {session.id}")
+
         # Update session with behavior data
         if not hasattr(session, 'behavior_logs'):
             session.behavior_logs = []
-        
+
         behavior_log = {
             'timestamp': timezone.now().isoformat(),
             'behavior_type': behavior_type,
             'metadata': metadata or {}
         }
-        
+
         session.behavior_logs.append(behavior_log)
         session.save()
-    
+
     @staticmethod
     def update_extraction_outcome(
         crew_sheet: CrewSheet,
@@ -686,72 +785,76 @@ class ExtractionLogger:
         try:
             extraction_log = crew_sheet.extraction_logs.latest('created_at')
             extraction_log.final_data = final_data
-            
+
             # Calculate edit ratio
             original_data = extraction_log.raw_extraction
             if original_data and 'employees' in original_data:
-                total_fields = len(original_data.get('table_headers', [])) * len(original_data.get('employees', []))
-                
+                total_fields = len(original_data.get(
+                    'table_headers', [])) * len(original_data.get('employees', []))
+
                 # Count actual edits by comparing original vs final
                 edit_count = ExtractionLogger._count_data_differences(
                     original_data, final_data
                 )
                 extraction_log.edit_ratio = edit_count / max(total_fields, 1)
-            
+
             # Update user satisfaction if provided
             if user_satisfaction is not None:
                 extraction_log.user_satisfaction_score = user_satisfaction
-            
+
             extraction_log.save()
-            logger.info(f"Updated extraction outcome for crew sheet {crew_sheet.id}")
-            
+            logger.info(
+                f"Updated extraction outcome for crew sheet {crew_sheet.id}")
+
         except ExtractionLog.DoesNotExist:
-            logger.warning(f"No extraction log found for crew sheet {crew_sheet.id}")
-    
+            logger.warning(
+                f"No extraction log found for crew sheet {crew_sheet.id}")
+
     @staticmethod
     def _count_data_differences(original: dict, final: dict) -> int:
         """Count differences between original and final data."""
         if not original or not final:
             return 0
-        
+
         original_employees = original.get('employees', [])
         final_employees = final.get('employees', [])
-        
+
         if len(original_employees) != len(final_employees):
-            return len(original_employees) + len(final_employees)  # Major structural change
-        
+            # Major structural change
+            return len(original_employees) + len(final_employees)
+
         edit_count = 0
         for i, (orig_emp, final_emp) in enumerate(zip(original_employees, final_employees)):
             for key in set(orig_emp.keys()) | set(final_emp.keys()):
                 if str(orig_emp.get(key, '')).strip() != str(final_emp.get(key, '')).strip():
                     edit_count += 1
-        
+
         return edit_count
 
 
 class ContinuousLearner:
     """Continuous learning system that analyzes corrections and improves prompts."""
-    
+
     @staticmethod
     def analyze_corrections(days_back: int = 30) -> dict:
         """Analyze user corrections to find common error patterns."""
         logger.info(f"Analyzing corrections from last {days_back} days")
-        
+
         # Get recent user edits
         recent_edits = UserEdit.objects.filter(
             timestamp__gte=timezone.now() - timedelta(days=days_back)
         ).select_related('session__crew_sheet')
-        
+
         # Analyze patterns
         field_errors = {}
         header_issues = {}
         common_corrections = {}
-        
+
         for edit in recent_edits:
             field_name = edit.field_name
             original = edit.original_value
             corrected = edit.new_value
-            
+
             # Track field-specific errors
             if field_name not in field_errors:
                 field_errors[field_name] = []
@@ -760,7 +863,7 @@ class ContinuousLearner:
                 'corrected': corrected,
                 'timestamp': edit.timestamp
             })
-            
+
             # Track header structure issues
             if '_' in field_name:
                 header_parts = field_name.split('_')
@@ -769,18 +872,19 @@ class ContinuousLearner:
                     if header_type not in header_issues:
                         header_issues[header_type] = 0
                     header_issues[header_type] += 1
-            
+
             # Track common correction patterns
             correction_pattern = f"{original} -> {corrected}"
             if correction_pattern not in common_corrections:
                 common_corrections[correction_pattern] = 0
             common_corrections[correction_pattern] += 1
-        
+
         # Generate insights
         insights = {
             'total_edits': recent_edits.count(),
             'most_edited_fields': dict(sorted(
-                {field: len(errors) for field, errors in field_errors.items()}.items(),
+                {field: len(errors)
+                 for field, errors in field_errors.items()}.items(),
                 key=lambda x: x[1],
                 reverse=True
             )[:10]),
@@ -796,9 +900,9 @@ class ContinuousLearner:
             )[:20]),
             'field_error_details': field_errors
         }
-        
+
         return insights
-    
+
     @staticmethod
     def generate_improved_prompt(
         sheet_type: str = None,
@@ -807,7 +911,7 @@ class ContinuousLearner:
     ) -> str:
         """Generate improved extraction prompt based on learning data."""
         logger.info("Generating improved extraction prompt")
-        
+
         base_prompt = """You are an expert at extracting data from crew/timesheets. These sheets track WHO (crew/people) does WHAT (task) WHERE (cost center), for HOW LONG (hours), and HOW FAST (pieces).
 
 CRITICAL ANALYSIS STEPS:
@@ -822,7 +926,7 @@ HIERARCHICAL HEADER STRUCTURE (VERY IMPORTANT):
   * MIDDLE LEVEL: Tasks (e.g., "zero", "socker", "irrigation")  
   * BOTTOM LEVEL: Job columns (e.g., "Job No Hrs", "Job Piece Work")
 - CAPTURE THIS HIERARCHY in your column naming using this format: COST_CENTER_TASK_JOBTYPE"""
-        
+
         # Add company-specific patterns
         if company_patterns:
             base_prompt += f"\n\nCOMPANY-SPECIFIC PATTERNS:\n"
@@ -832,13 +936,13 @@ HIERARCHICAL HEADER STRUCTURE (VERY IMPORTANT):
                 base_prompt += f"- Common tasks: {', '.join(company_patterns['common_tasks'])}\n"
             if 'typical_headers' in company_patterns:
                 base_prompt += f"- Typical headers: {', '.join(company_patterns['typical_headers'])}\n"
-        
+
         # Add error-specific corrections
         if recent_errors and 'most_edited_fields' in recent_errors:
             base_prompt += f"\n\nCOMMON ERROR CORRECTIONS:\n"
             for field, count in list(recent_errors['most_edited_fields'].items())[:5]:
                 base_prompt += f"- Pay special attention to '{field}' field (frequently corrected)\n"
-        
+
         # Add time format improvements
         base_prompt += """
 NESTED HEADER RULES (VERY IMPORTANT):
@@ -857,19 +961,19 @@ DATA PLACEMENT ACCURACY:
 - Job data must go in the corresponding hierarchical columns (COST_CENTER_TASK_JOB_TYPE)
 - Only use placeholder marks ("✓") if actually present in original
 - Extract actual numeric and text values whenever present"""
-        
+
         return base_prompt
-    
+
     @staticmethod
     def update_model_prompts(insights: dict) -> dict:
         """Update model prompts based on insights and run A/B testing."""
         logger.info("Updating model prompts based on insights")
-        
+
         # Generate improved prompt
         improved_prompt = ContinuousLearner.generate_improved_prompt(
             recent_errors=insights
         )
-        
+
         # Store prompt version for A/B testing
         prompt_version = {
             'version': f"v_{timezone.now().strftime('%Y%m%d_%H%M%S')}",
@@ -877,11 +981,12 @@ DATA PLACEMENT ACCURACY:
             'based_on_insights': insights,
             'created_at': timezone.now().isoformat()
         }
-        
+
         # In a real implementation, you'd store this in a PromptVersion model
         # For now, log it
-        logger.info(f"Generated new prompt version: {prompt_version['version']}")
-        
+        logger.info(
+            f"Generated new prompt version: {prompt_version['version']}")
+
         return {
             'prompt_version': prompt_version,
             'improvements_made': [

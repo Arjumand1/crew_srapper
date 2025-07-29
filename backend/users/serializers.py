@@ -29,14 +29,13 @@ class RegisterSerializer(serializers.ModelSerializer):
                 {"password": "Password fields didn't match."})
         return attrs
 
-
     def create(self, validated_data):
         # Remove password2 as it's not a model field
         validated_data.pop('password2', None)
-        
+
         # Extract the part before @ from email to use as base for username
         email_username = validated_data['email'].split('@')[0]
-        
+
         # Keep trying until we find an available username
         max_attempts = 10
         for _ in range(max_attempts):

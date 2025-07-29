@@ -4,16 +4,17 @@ import json
 import time
 import base64
 import logging
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Optional
 from openai import OpenAI
-from openai.types.chat import ChatCompletion
 from openai._exceptions import APIError, APITimeoutError, APIConnectionError
-from django.conf import settings
-from django.core.files.storage import default_storage
-from datetime import datetime
 from django.utils import timezone
-from .analytics import LearningSystem, QualityValidator, ExtractionLogger, ContinuousLearner
-from .models import CrewSheet, ExtractionExample, SheetTemplate, CompanyLearningProfile, SmartReviewQueue
+from .analytics import LearningSystem, ContinuousLearner
+from .models import CrewSheet, SheetTemplate, CompanyLearningProfile
+from .image_processor import AdaptivePreprocessor
+from .multi_stage_extractor import MultiStageExtractor
+from .smart_retry import SmartRetryService
+from .visual_template_matching import VisualTemplateMatchingService, TemplateCreationAssistant
+from .crew_matching_service import CrewMatchingService
 import httpx
 
 logger = logging.getLogger(__name__)
@@ -36,7 +37,8 @@ class OpenAIService:
         """Call OpenAI API with retry logic."""
         for attempt in range(max_retries):
             try:
-                logger.info(f"OpenAI API call attempt {attempt + 1}/{max_retries}")
+                logger.info(
+                    f"OpenAI API call attempt {attempt + 1}/{max_retries}")
                 response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=messages,
@@ -49,7 +51,8 @@ class OpenAIService:
             except (APITimeoutError, APIConnectionError, APIError) as e:
                 if attempt < max_retries - 1:
                     wait_time = (2 ** attempt)  # Exponential backoff
-                    logger.warning(f"API call failed, retrying in {wait_time}s: {str(e)}")
+                    logger.warning(
+                        f"API call failed, retrying in {wait_time}s: {str(e)}")
                     time.sleep(wait_time)
                 else:
                     raise e
@@ -154,7 +157,8 @@ class OpenAIService:
         # Validate image exists and read it
         try:
             with open(image_path, "rb") as image_file:
-                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+                base64_image = base64.b64encode(
+                    image_file.read()).decode('utf-8')
         except Exception as e:
             error_message = f"Failed to read or encode image: {str(e)}"
             return {
@@ -177,13 +181,23 @@ CRITICAL ANALYSIS STEPS:
 3. THIRD: Identify how cost centers and tasks relate to job columns in the header structure
 4. FOURTH: Extract data with precise column matching
 
+REAL CREW SHEET PATTERNS (BASED ON ACTUAL EXAMPLES):
+- Sheets often have complex multi-level headers with job codes like "KW13", "270", "CMA", "F29"
+- Time tracking typically includes: START, BREAK 1 (OUT/IN), LUNCH (OUT/IN), sometimes BREAK 2
+- Job assignments show both HOURS and PIECE WORK for different cost centers/tasks
+- Many cells contain checkmarks (✓) when work was performed but specific hours/pieces aren't recorded
+- Employee names are always in the leftmost column
+- Dates are typically at the top (formats like "6-25-25" or "6/30/25")
+- Some sheets have handwritten annotations and corrections
+
 HIERARCHICAL HEADER STRUCTURE (VERY IMPORTANT):
 - Many crew sheets use a THREE-LEVEL HIERARCHY in their headers:
-  * TOP LEVEL: Cost Centers (e.g., "KW13", "270", "CMA")
-  * MIDDLE LEVEL: Tasks (e.g., "zero", "socker", "irrigation")
-  * BOTTOM LEVEL: Job columns (e.g., "Job No Hrs", "Job Piece Work")
+  * TOP LEVEL: Cost Centers (e.g., "KW13", "270", "CMA", "F29")
+  * MIDDLE LEVEL: Tasks (e.g., "ZERO", "SOCKER", "IRRIGATION", "CRIMSON NOIR")
+  * BOTTOM LEVEL: Job columns (e.g., "JOB NO HRS", "JOB PIECE WORK", "WORK HRS", "WORK PCS")
 - CAPTURE THIS HIERARCHY in your column naming using this format: COST_CENTER_TASK_JOBTYPE
   * Example: "KW13_ZERO_JOB_NO_HRS" where KW13 is cost center, ZERO is task, JOB_NO_HRS is job type
+  * Example: "F29_CRIMSON_NOIR_WORK_HRS" for another common pattern seen in real sheets
   * If cost center or task is missing, use format: TASK_JOBTYPE or JOBTYPE as appropriate
 - CONSISTENTLY APPLY this hierarchy across all similar columns
 
@@ -209,8 +223,10 @@ DATA PLACEMENT ACCURACY:
 - Match data values to the CORRECT hierarchical columns
 - Time values must go in precise columns (START_IN, BREAK1_OUT, etc.)
 - Job data must go in the corresponding hierarchical columns (COST_CENTER_TASK_JOB_TYPE) for all cost centers and tasks and their job types.
-- Only use placeholder marks ("✓") if actually present in original
-- Extract actual numeric and text values whenever present
+- PRESERVE checkmarks (✓) exactly as they appear - these indicate work was performed
+- EXTRACT actual numeric values when present (times: "6:30", "8:40"; hours: "8.50", "2.25"; pieces: "230", "45")
+- DISTINGUISH between checkmarks and actual data values
+- Handle both handwritten and printed values with equal accuracy
 
 EXTRACTION PROCESS:
 1. Scan the ENTIRE sheet first, noting the header structure and hierarchy
@@ -284,12 +300,14 @@ Remember: correctly identify and preserve ALL hierarchical relationships in the 
     @staticmethod
     def extract_crew_sheet_data_with_prompt(image_path: str, custom_prompt: str):
         """Extract crew sheet data using a custom prompt."""
-        logger.info(f"Starting extraction with custom prompt for image: {image_path}")
+        logger.info(
+            f"Starting extraction with custom prompt for image: {image_path}")
 
         # Validate image exists and read it
         try:
             with open(image_path, "rb") as image_file:
-                base64_image = base64.b64encode(image_file.read()).decode('utf-8')
+                base64_image = base64.b64encode(
+                    image_file.read()).decode('utf-8')
         except Exception as e:
             error_message = f"Failed to read or encode image: {str(e)}"
             return {
@@ -328,7 +346,7 @@ Remember: correctly identify and preserve ALL hierarchical relationships in the 
 
 class RAGPipeline:
     """Retrieval-Augmented Generation pipeline for better extractions."""
-    
+
     @staticmethod
     def find_similar_extractions(
         sheet_description: str,
@@ -337,14 +355,14 @@ class RAGPipeline:
     ) -> List[dict]:
         """Find similar successful extractions for few-shot learning."""
         from .models import ExtractionExample, SheetTemplate
-        
+
         # Start with high-quality examples
         query = ExtractionExample.objects.filter(
             is_high_quality=True,
             confidence_score__gte=0.8,
             edit_ratio__lte=0.2
         )
-        
+
         # Filter by template if provided
         if template_id:
             try:
@@ -352,10 +370,11 @@ class RAGPipeline:
                 query = query.filter(template=template)
             except SheetTemplate.DoesNotExist:
                 pass
-        
+
         # Get recent successful examples
-        examples = list(query.order_by('-confidence_score', '-user_satisfaction')[:limit])
-        
+        examples = list(query.order_by(
+            '-confidence_score', '-user_satisfaction')[:limit])
+
         # Format for few-shot learning
         few_shot_examples = []
         for example in examples:
@@ -365,9 +384,9 @@ class RAGPipeline:
                 'confidence': example.confidence_score,
                 'template_type': example.template.template_type if example.template else 'unknown'
             })
-        
+
         return few_shot_examples
-    
+
     @staticmethod
     def generate_dynamic_prompt(
         base_prompt: str,
@@ -377,83 +396,100 @@ class RAGPipeline:
         recent_corrections: dict = None
     ) -> str:
         """Generate a dynamic prompt based on context and learning data."""
-        
+
         enhanced_prompt = base_prompt
-        
+
         # Add template-specific instructions
         if template:
             enhanced_prompt += f"\n\nTEMPLATE-SPECIFIC GUIDANCE:\n"
             enhanced_prompt += f"Sheet Type: {template.get_template_type_display()}\n"
             enhanced_prompt += f"Expected Fields: {', '.join(template.expected_fields)}\n"
-            
+
             if template.header_structure:
                 enhanced_prompt += f"Known Header Structure: {json.dumps(template.header_structure, indent=2)}\n"
-        
+
         # Add company-specific patterns
         if company_profile:
             enhanced_prompt += f"\n\nCOMPANY PATTERNS FOR {company_profile.company_name.upper()}:\n"
-            
+
             if company_profile.common_cost_centers:
                 enhanced_prompt += f"- Common Cost Centers: {', '.join(company_profile.common_cost_centers)}\n"
-            
+
             if company_profile.common_tasks:
                 enhanced_prompt += f"- Common Tasks: {', '.join(company_profile.common_tasks)}\n"
-            
+
             if company_profile.typical_headers:
                 enhanced_prompt += f"- Typical Headers: {', '.join(company_profile.typical_headers)}\n"
-            
+
             if company_profile.time_format_preferences:
                 enhanced_prompt += f"- Time Format Preferences: {json.dumps(company_profile.time_format_preferences)}\n"
-        
+
         # Add few-shot examples
         if few_shot_examples:
             enhanced_prompt += f"\n\nSUCCESSFUL EXTRACTION EXAMPLES:\n"
-            for i, example in enumerate(few_shot_examples[:2], 1):  # Limit to 2 examples to save tokens
+            # Limit to 2 examples to save tokens
+            for i, example in enumerate(few_shot_examples[:2], 1):
                 enhanced_prompt += f"\nExample {i} (Confidence: {example['confidence']:.1%}):\n"
                 enhanced_prompt += f"Description: {example['description']}\n"
                 enhanced_prompt += f"Result: {json.dumps(example['extraction'], indent=2)}\n"
-        
+
         # Add recent correction patterns
         if recent_corrections and 'most_edited_fields' in recent_corrections:
             enhanced_prompt += f"\n\nRECENT CORRECTION PATTERNS:\n"
             for field, count in list(recent_corrections['most_edited_fields'].items())[:5]:
                 enhanced_prompt += f"- Field '{field}' frequently needs correction ({count} times)\n"
-        
+
         enhanced_prompt += f"\n\nRemember: Extract data with high precision, following the patterns shown in examples."
-        
+
         return enhanced_prompt
 
 
 class TemplateMatchingService:
     """Service for matching sheets to templates and managing templates."""
-    
+
     @staticmethod
     def suggest_template(user, sheet_image_path: str = None) -> List[dict]:
-        """Suggest matching templates for a user's sheet."""
+        """Suggest matching templates for a user's sheet using visual matching."""
         from .models import SheetTemplate
-        
-        # Get user's templates first
+
+        # Use visual template matching if image path is provided
+        if sheet_image_path:
+            try:
+                logger.info(
+                    f"Using visual template matching for: {sheet_image_path}")
+                return VisualTemplateMatchingService.find_matching_templates(
+                    user=user,
+                    sheet_image_path=sheet_image_path,
+                    limit=5,
+                    include_visual_analysis=True
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Visual template matching failed, falling back to simple matching: {str(e)}")
+
+        # Fallback to simple template ranking
         user_templates = SheetTemplate.objects.filter(
             user=user,
             is_active=True
         ).order_by('-success_rate', '-usage_count')
-        
-        # TODO: In future, implement image similarity matching
-        # For now, return user's best templates
+
         suggestions = []
         for template in user_templates[:5]:
             suggestions.append({
-                'id': str(template.id),
-                'name': template.name,
+                'template_id': str(template.id),
+                'template_name': template.name,
                 'description': template.description,
                 'template_type': template.template_type,
                 'success_rate': template.success_rate,
                 'usage_count': template.usage_count,
-                'company': template.company
+                'company': template.company,
+                'similarity_score': template.success_rate,  # Use success rate as similarity
+                'match_reasons': ['High success rate'],
+                'confidence': template.success_rate
             })
-        
+
         return suggestions
-    
+
     @staticmethod
     def create_template_from_sheet(
         user,
@@ -465,12 +501,12 @@ class TemplateMatchingService:
     ) -> 'SheetTemplate':
         """Create a new template from a successful extraction."""
         from .models import SheetTemplate
-        
+
         # Extract header structure and expected fields from the crew sheet
         extracted_data = crew_sheet.extracted_data or {}
         header_structure = {}
         expected_fields = extracted_data.get('table_headers', [])
-        
+
         # Analyze header structure
         if 'employees' in extracted_data and extracted_data['employees']:
             first_employee = extracted_data['employees'][0]
@@ -482,7 +518,7 @@ class TemplateMatchingService:
                         if category not in header_structure:
                             header_structure[category] = []
                         header_structure[category].append(field_name)
-        
+
         template = SheetTemplate.objects.create(
             user=user,
             name=template_name,
@@ -494,71 +530,81 @@ class TemplateMatchingService:
             template_type=template_type,
             success_rate=crew_sheet.confidence_score or 0.8
         )
-        
+
         return template
-    
+
     @staticmethod
     def _update_template_success_rate(template: 'SheetTemplate', new_confidence: float) -> None:
         """Update template success rate based on new usage."""
         # Running average calculation
         current_rate = template.success_rate
         usage_count = template.usage_count
-        
+
         # Weight the new confidence with existing rate
         if usage_count > 1:
-            template.success_rate = ((current_rate * (usage_count - 1)) + new_confidence) / usage_count
+            template.success_rate = (
+                (current_rate * (usage_count - 1)) + new_confidence) / usage_count
         else:
             template.success_rate = new_confidence
-        
+
         template.save()
-        logger.info(f"Updated template {template.name} success rate to {template.success_rate:.2%}")
+        logger.info(
+            f"Updated template {template.name} success rate to {template.success_rate:.2%}")
 
 
 class SmartReviewQueueService:
     """Service for managing the intelligent review queue."""
-    
+
     @staticmethod
     def evaluate_for_review(crew_sheet: 'CrewSheet') -> bool:
         """Evaluate if a sheet needs to be added to review queue."""
         from .models import SmartReviewQueue
-        
+
         priority_score = 0.0
         review_reasons = []
         flagged_issues = []
         suggested_actions = []
-        
+
         # Check confidence score
         if crew_sheet.confidence_score < 0.7:
             priority_score += 30
             review_reasons.append('low_confidence')
-            flagged_issues.append(f'Low confidence score: {crew_sheet.confidence_score:.2%}')
-            suggested_actions.append('Manual verification of extracted data required')
-        
+            flagged_issues.append(
+                f'Low confidence score: {crew_sheet.confidence_score:.2%}')
+            suggested_actions.append(
+                'Manual verification of extracted data required')
+
         # Check if validation failed
         if crew_sheet.needs_review:
             priority_score += 25
             review_reasons.append('validation_failed')
             flagged_issues.append('Failed automatic validation rules')
-            suggested_actions.append('Review validation errors and correct data')
-        
+            suggested_actions.append(
+                'Review validation errors and correct data')
+
         # Check for unusual format (no similar template)
-        user_templates_count = crew_sheet.user.sheettemplate_set.filter(is_active=True).count()
+        user_templates_count = crew_sheet.user.sheettemplate_set.filter(
+            is_active=True).count()
         if user_templates_count == 0:
             priority_score += 15
             review_reasons.append('unusual_format')
             flagged_issues.append('No matching template found')
-            suggested_actions.append('Consider creating a template for this sheet type')
-        
+            suggested_actions.append(
+                'Consider creating a template for this sheet type')
+
         # Check expected edit frequency based on user history
         user_profile = getattr(crew_sheet.user, 'extraction_profile', None)
         if user_profile and user_profile.total_edits_made > 0:
-            avg_edits = user_profile.total_edits_made / max(user_profile.total_sheets_processed, 1)
+            avg_edits = user_profile.total_edits_made / \
+                max(user_profile.total_sheets_processed, 1)
             if avg_edits > 5:  # High edit frequency
                 priority_score += 20
                 review_reasons.append('high_edit_frequency')
-                flagged_issues.append(f'High expected edit frequency: {avg_edits:.1f} edits/sheet')
-                suggested_actions.append('Pre-review recommended due to user edit patterns')
-        
+                flagged_issues.append(
+                    f'High expected edit frequency: {avg_edits:.1f} edits/sheet')
+                suggested_actions.append(
+                    'Pre-review recommended due to user edit patterns')
+
         # Add to queue if priority score is high enough
         if priority_score >= 20:
             SmartReviewQueue.objects.update_or_create(
@@ -571,99 +617,251 @@ class SmartReviewQueueService:
                 }
             )
             return True
-        
+
         return False
 
 
 class EnhancedExtractionService:
-    """Enhanced extraction service with RAG and template-based learning."""
-    
+    """Enhanced extraction service with RAG, multi-stage processing, and smart retry."""
+
     @staticmethod
     def extract_with_intelligence(
         crew_sheet: 'CrewSheet',
         template_id: str = None,
-        use_rag: bool = True
+        use_rag: bool = True,
+        extraction_strategy: str = 'smart_retry'
     ) -> dict:
-        """Extract data using intelligent RAG pipeline and templates."""
+        """Extract data using intelligent pipeline with multiple strategies."""
         from .analytics import ExtractionLogger, ContinuousLearner
         from .models import SheetTemplate, CompanyLearningProfile
-        
+
         start_time = time.time()
-        
+
         try:
             # Get template if specified
             template = None
             if template_id:
                 try:
-                    template = SheetTemplate.objects.get(id=template_id, user=crew_sheet.user)
+                    template = SheetTemplate.objects.get(
+                        id=template_id, user=crew_sheet.user)
                     template.usage_count += 1
                     template.save()
                 except SheetTemplate.DoesNotExist:
                     logger.warning(f"Template {template_id} not found")
-            
+
             # Get company learning profile
             company_profile = None
             try:
-                company_profile = CompanyLearningProfile.objects.get(user=crew_sheet.user)
+                company_profile = CompanyLearningProfile.objects.get(
+                    user=crew_sheet.user)
             except CompanyLearningProfile.DoesNotExist:
                 pass
-            
-            # Get recent corrections for this user
-            recent_corrections = ContinuousLearner.analyze_corrections(days_back=30) if use_rag else None
-            
-            # Find similar successful extractions
-            few_shot_examples = []
-            if use_rag:
-                sheet_description = f"Crew sheet for {crew_sheet.user.username}"
-                few_shot_examples = RAGPipeline.find_similar_extractions(
-                    sheet_description, template_id, limit=2
+
+            # Choose extraction strategy
+            if extraction_strategy == 'smart_retry':
+                result = EnhancedExtractionService._extract_with_smart_retry(
+                    crew_sheet, template_id, template, company_profile
                 )
-            
-            # Generate dynamic prompt
-            base_prompt = ContinuousLearner.generate_improved_prompt()
-            enhanced_prompt = RAGPipeline.generate_dynamic_prompt(
-                base_prompt=base_prompt,
-                template=template,
-                company_profile=company_profile,
-                few_shot_examples=few_shot_examples,
-                recent_corrections=recent_corrections
-            )
-            
-            # Perform extraction with enhanced prompt
-            result = OpenAIService.extract_crew_sheet_data_with_prompt(
-                crew_sheet.image.path, enhanced_prompt
-            )
-            
+            elif extraction_strategy == 'multi_stage':
+                result = EnhancedExtractionService._extract_with_multi_stage(
+                    crew_sheet, template, company_profile
+                )
+            elif extraction_strategy == 'rag':
+                result = EnhancedExtractionService._extract_with_rag(
+                    crew_sheet, template_id, template, company_profile, use_rag
+                )
+            else:
+                # Fallback to standard extraction
+                result = OpenAIService.extract_crew_sheet_data(
+                    crew_sheet.image.path)
+
             processing_time = time.time() - start_time
-            
+
             if result.get('valid'):
                 # Log the extraction
-                confidence_scores = {'overall_confidence': result.get('confidence_score', 0.8)}
+                confidence_scores = {
+                    'overall_confidence': result.get('confidence_score', 0.8)}
                 ExtractionLogger.log_extraction(
                     crew_sheet=crew_sheet,
                     raw_extraction=result,
                     confidence_scores=confidence_scores,
                     processing_time=processing_time,
                     api_cost=0.05,  # Estimate
-                    token_usage={'prompt_tokens': len(enhanced_prompt.split())}
+                    token_usage={'prompt_tokens': len(str(result).split())}
                 )
-                
+
                 # Evaluate for review queue
                 SmartReviewQueueService.evaluate_for_review(crew_sheet)
-                
+
                 # Update template success rate if used
                 if template:
                     TemplateMatchingService._update_template_success_rate(
                         template, result.get('confidence_score', 0.8)
                     )
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Enhanced extraction failed: {str(e)}")
             # Fallback to standard extraction
             return OpenAIService.extract_crew_sheet_data(crew_sheet.image.path)
-    
+
+    @staticmethod
+    def _extract_with_smart_retry(
+        crew_sheet: 'CrewSheet',
+        template_id: str = None,
+        template: 'SheetTemplate' = None,
+        company_profile: 'CompanyLearningProfile' = None
+    ) -> dict:
+        """Extract using smart retry strategies."""
+        logger.info(
+            f"Using smart retry extraction for crew sheet {crew_sheet.id}")
+
+        # Use smart retry service
+        result = SmartRetryService.extract_with_smart_retry(
+            crew_sheet=crew_sheet,
+            template_id=template_id,
+            max_strategies=3,
+            min_confidence=0.7
+        )
+
+        return result
+
+    @staticmethod
+    def _extract_with_multi_stage(
+        crew_sheet: 'CrewSheet',
+        template: 'SheetTemplate' = None,
+        company_profile: 'CompanyLearningProfile' = None
+    ) -> dict:
+        """Extract using multi-stage pipeline."""
+        logger.info(
+            f"Using multi-stage extraction for crew sheet {crew_sheet.id}")
+
+        # Use multi-stage extractor
+        result = MultiStageExtractor.extract_with_stages(
+            image_path=crew_sheet.image.path,
+            template=template,
+            company_profile=company_profile,
+            use_preprocessing=True
+        )
+
+        return result
+
+    @staticmethod
+    def _extract_with_rag(
+        crew_sheet: 'CrewSheet',
+        template_id: str = None,
+        template: 'SheetTemplate' = None,
+        company_profile: 'CompanyLearningProfile' = None,
+        use_rag: bool = True
+    ) -> dict:
+        """Extract using RAG pipeline (original implementation)."""
+        logger.info(f"Using RAG extraction for crew sheet {crew_sheet.id}")
+
+        # Get recent corrections for this user
+        recent_corrections = ContinuousLearner.analyze_corrections(
+            days_back=30) if use_rag else None
+
+        # Find similar successful extractions
+        few_shot_examples = []
+        if use_rag:
+            sheet_description = f"Crew sheet for {crew_sheet.user.username}"
+            few_shot_examples = RAGPipeline.find_similar_extractions(
+                sheet_description, template_id, limit=2
+            )
+
+        # Generate dynamic prompt with real-time learning
+        base_prompt = ContinuousLearner.generate_improved_prompt()
+        enhanced_prompt = RAGPipeline.generate_dynamic_prompt(
+            base_prompt=base_prompt,
+            template=template,
+            company_profile=company_profile,
+            few_shot_examples=few_shot_examples,
+            recent_corrections=recent_corrections
+        )
+
+        # Apply real-time learning adaptations
+        try:
+            from .realtime_learning import AdaptivePromptManager
+            enhanced_prompt = AdaptivePromptManager.get_adaptive_prompt(
+                user=crew_sheet.user,
+                base_prompt=enhanced_prompt
+            )
+            logger.info("Applied real-time learning adaptations to prompt")
+        except Exception as e:
+            logger.warning(f"Real-time prompt adaptation failed: {str(e)}")
+
+        # Add known crew names, cost centers, and tasks to prompt
+        try:
+            enhanced_prompt = EnhancedExtractionService._add_known_lists_to_prompt(
+                enhanced_prompt, crew_sheet.user, company_profile
+            )
+            logger.info("Added known crew lists to extraction prompt")
+        except Exception as e:
+            logger.warning(f"Adding known lists to prompt failed: {str(e)}")
+
+        # Preprocess image for better OCR
+        processed_image_path = AdaptivePreprocessor.preprocess_adaptive(
+            crew_sheet.image.path)
+
+        # Perform extraction with enhanced prompt
+        result = OpenAIService.extract_crew_sheet_data_with_prompt(
+            processed_image_path, enhanced_prompt
+        )
+
+        return result
+
+    @staticmethod
+    def _add_known_lists_to_prompt(
+        base_prompt: str,
+        user,
+        company_profile: Optional['CompanyLearningProfile']
+    ) -> str:
+        """Add known crew names, cost centers, and tasks to the extraction prompt."""
+
+        if not company_profile:
+            return base_prompt
+
+        # Build the known lists section
+        known_lists_section = "\n\nKNOWN COMPANY DATA (VERY IMPORTANT - USE FOR VALIDATION):\n"
+
+        # Add known crew member names
+        if company_profile.common_crew_names:
+            known_lists_section += f"\nKNOWN CREW MEMBER NAMES:\n"
+            # Limit to prevent prompt overflow
+            known_lists_section += f"- {', '.join(company_profile.common_crew_names[:20])}"
+            if len(company_profile.common_crew_names) > 20:
+                known_lists_section += f" (and {len(company_profile.common_crew_names) - 20} more)"
+
+            known_lists_section += f"\n\nNAME MATCHING INSTRUCTIONS:\n"
+            known_lists_section += f"1. When extracting employee names, try to match them against the known crew member names\n"
+            known_lists_section += f"2. If you find a name that closely matches a known name, use the exact known name\n"
+            known_lists_section += f"3. If you find a completely new name not in the list, extract it as-is\n"
+            known_lists_section += f"4. Pay attention to common OCR errors (O/0, I/l/1, etc.) when matching names\n"
+
+        # Add known cost centers
+        if company_profile.common_cost_centers:
+            known_lists_section += f"\n\nKNOWN COST CENTERS:\n"
+            known_lists_section += f"- {', '.join(company_profile.common_cost_centers)}\n"
+            known_lists_section += f"\nCOST CENTER MATCHING:\n"
+            known_lists_section += f"1. When extracting cost center codes, try to match against known cost centers\n"
+            known_lists_section += f"2. Use exact known cost center codes when possible\n"
+            known_lists_section += f"3. If you find new cost center codes, extract them as-is\n"
+
+        # Add known tasks
+        if company_profile.common_tasks:
+            known_lists_section += f"\n\nKNOWN TASKS:\n"
+            known_lists_section += f"- {', '.join(company_profile.common_tasks)}\n"
+            known_lists_section += f"\nTASK MATCHING:\n"
+            known_lists_section += f"1. When extracting task names, try to match against known tasks\n"
+            known_lists_section += f"2. Use exact known task names when possible\n"
+            known_lists_section += f"3. If you find new task names, extract them as-is\n"
+
+        # Add highlighting instruction
+        known_lists_section += f"\n\nIMPORTANT: The system will automatically highlight new names, cost centers, and tasks that are not in the known lists above.\n"
+
+        return base_prompt + known_lists_section
+
     @staticmethod
     def _perform_extraction_with_prompt(crew_sheet: 'CrewSheet', prompt: str) -> dict:
         """Perform extraction with a custom prompt."""
@@ -772,27 +970,33 @@ class CrewSheetProcessor:
             return False
 
     @staticmethod
-    def process_crew_sheet_with_learning(crew_sheet):
+    def process_crew_sheet_with_learning(crew_sheet, template_id=None, extraction_strategy='smart_retry'):
         """
-        Process a crew sheet through the complete learning pipeline.
+        Process a crew sheet through the complete learning pipeline with enhanced AI features.
 
         Args:
             crew_sheet: CrewSheet model instance
+            template_id: Optional template ID to use
+            extraction_strategy: Strategy to use ('smart_retry', 'multi_stage', 'rag', or 'standard')
 
         Returns:
             dict: Processing results with learning metrics
         """
         try:
             logger.info(
-                f"Processing crew sheet {crew_sheet.id} with learning pipeline")
+                f"Processing crew sheet {crew_sheet.id} with learning pipeline using {extraction_strategy} strategy")
 
             # Update status
             crew_sheet.status = 'processing'
             crew_sheet.save()
 
-            # Extract data using OpenAI
-            extracted_data = OpenAIService.extract_crew_sheet_data(
-                crew_sheet.image.path)
+            # Extract data using enhanced extraction service
+            extracted_data = EnhancedExtractionService.extract_with_intelligence(
+                crew_sheet=crew_sheet,
+                template_id=template_id,
+                use_rag=True,
+                extraction_strategy=extraction_strategy
+            )
 
             if not extracted_data.get('valid'):
                 crew_sheet.status = 'failed'
@@ -804,6 +1008,18 @@ class CrewSheetProcessor:
             # Remove performance metrics from main data before saving
             performance_metrics = extracted_data.pop(
                 '_performance_metrics', {})
+            retry_metadata = extracted_data.pop('retry_metadata', {})
+            extraction_metadata = extracted_data.pop('extraction_metadata', {})
+
+            # Apply crew matching and highlighting
+            try:
+                extracted_data = CrewMatchingService.match_and_highlight_extraction(
+                    crew_sheet=crew_sheet,
+                    extraction_result=extracted_data
+                )
+                logger.info("Applied crew matching and highlighting")
+            except Exception as e:
+                logger.warning(f"Crew matching failed: {str(e)}")
 
             # Process through learning system
             learning_results = LearningSystem.process_extraction(
@@ -820,16 +1036,36 @@ class CrewSheetProcessor:
             logger.info(
                 f"Successfully processed crew sheet {crew_sheet.id} - Confidence: {learning_results['confidence_score']:.2f}")
 
-            return {
+            # Check if we should suggest template creation
+            template_suggestion = None
+            try:
+                template_suggestion = TemplateCreationAssistant.suggest_template_creation(
+                    crew_sheet=crew_sheet,
+                    extraction_confidence=learning_results['confidence_score']
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Template creation suggestion failed: {str(e)}")
+
+            result = {
                 "valid": True,
                 "extracted_data": extracted_data,
                 "learning_metrics": {
                     "confidence_score": learning_results['confidence_score'],
                     "needs_review": learning_results['needs_review'],
                     "issues_detected": learning_results['issues'],
-                    "performance_metrics": performance_metrics
+                    "performance_metrics": performance_metrics,
+                    "retry_metadata": retry_metadata,
+                    "extraction_metadata": extraction_metadata,
+                    "extraction_strategy_used": extraction_strategy
                 }
             }
+
+            # Add template creation suggestion if available
+            if template_suggestion:
+                result["template_suggestion"] = template_suggestion
+
+            return result
 
         except Exception as e:
             logger.error(

@@ -41,12 +41,7 @@
             <div v-if="reviewQueueItem.flagged_issues?.length" class="mt-2">
               <strong>Issues Detected:</strong>
               <v-chip-group class="mt-1">
-                <v-chip 
-                  v-for="issue in reviewQueueItem.flagged_issues" 
-                  :key="issue" 
-                  size="small"
-                  color="warning"
-                >
+                <v-chip v-for="issue in reviewQueueItem.flagged_issues" :key="issue" size="small" color="warning">
                   {{ issue }}
                 </v-chip>
               </v-chip-group>
@@ -76,16 +71,9 @@
             <!-- Template Selection -->
             <v-row>
               <v-col cols="12" md="6">
-                <v-select
-                  v-model="selectedTemplate"
-                  :items="availableTemplates"
-                  item-title="name"
-                  item-value="id"
-                  label="Select Template (Optional)"
-                  hint="Choose a template for better extraction accuracy"
-                  persistent-hint
-                  clearable
-                >
+                <v-select v-model="selectedTemplate" :items="availableTemplates" item-title="name" item-value="id"
+                  label="Select Template (Optional)" hint="Choose a template for better extraction accuracy"
+                  persistent-hint clearable>
                   <template v-slot:item="{ props, item }">
                     <v-list-item v-bind="props">
                       <template v-slot:title>{{ item.raw.name }}</template>
@@ -103,32 +91,17 @@
               </v-col>
               <v-col cols="12" md="6">
                 <div class="d-flex flex-column gap-2">
-                  <v-btn 
-                    v-if="selectedTemplate" 
-                    color="primary" 
-                    :loading="processing" 
-                    @click="processWithTemplate"
-                    block
-                  >
+                  <v-btn v-if="selectedTemplate" color="primary" :loading="processing" @click="processWithTemplate"
+                    block>
                     <v-icon start>mdi-auto-fix</v-icon>
                     Process with Template
                   </v-btn>
-                  <v-btn 
-                    color="secondary" 
-                    :loading="processing" 
-                    @click="processWithAI"
-                    block
-                  >
+                  <v-btn color="secondary" :loading="processing" @click="processWithAI" block>
                     <v-icon start>mdi-brain</v-icon>
                     Smart Process (AI Learning)
                   </v-btn>
-                  <v-btn 
-                    color="info" 
-                    :loading="loadingTemplates" 
-                    @click="loadTemplateSuggestions"
-                    variant="outlined"
-                    block
-                  >
+                  <v-btn color="info" :loading="loadingTemplates" @click="loadTemplateSuggestions" variant="outlined"
+                    block>
                     <v-icon start>mdi-lightbulb</v-icon>
                     Get Template Suggestions
                   </v-btn>
@@ -150,14 +123,17 @@
                 <v-col cols="12" md="4">
                   <v-card class="pa-4" variant="tonal" color="info">
                     <div class="text-subtitle-2 mb-2">Your Editing Patterns</div>
-                    <div class="text-h6 mb-1">{{ learningInsights.user_insights?.avg_edits_per_sheet?.toFixed(1) || 0 }} edits/sheet</div>
+                    <div class="text-h6 mb-1">{{ learningInsights.user_insights?.avg_edits_per_sheet?.toFixed(1) || 0 }}
+                      edits/sheet</div>
                     <div class="text-body-2 text-medium-emphasis">Average corrections needed</div>
                   </v-card>
                 </v-col>
                 <v-col cols="12" md="4">
                   <v-card class="pa-4" variant="tonal" color="success">
                     <div class="text-subtitle-2 mb-2">Completion Rate</div>
-                    <div class="text-h6 mb-1">{{ ((learningInsights.user_insights?.completion_rate || 0) * 100).toFixed(1) }}%</div>
+                    <div class="text-h6 mb-1">{{ ((learningInsights.user_insights?.completion_rate || 0) *
+                      100).toFixed(1)
+                    }}%</div>
                     <div class="text-body-2 text-medium-emphasis">Sheets successfully completed</div>
                   </v-card>
                 </v-col>
@@ -175,12 +151,8 @@
                 <v-col cols="12">
                   <h4 class="mb-3">Fields You Most Often Correct:</h4>
                   <v-chip-group>
-                    <v-chip 
-                      v-for="(count, field) in learningInsights.user_insights.most_edited_fields" 
-                      :key="field"
-                      :color="getFieldEditColor(count)"
-                      size="small"
-                    >
+                    <v-chip v-for="(count, field) in learningInsights.user_insights.most_edited_fields" :key="field"
+                      :color="getFieldEditColor(count)" size="small">
                       {{ formatFieldName(field) }}: {{ count }}
                     </v-chip>
                   </v-chip-group>
@@ -195,12 +167,8 @@
                     <v-col cols="12" md="4" v-if="learningInsights.company_profile.common_cost_centers?.length">
                       <div class="text-subtitle-2 mb-2">Cost Centers</div>
                       <v-chip-group>
-                        <v-chip 
-                          v-for="center in learningInsights.company_profile.common_cost_centers" 
-                          :key="center"
-                          size="small"
-                          color="blue-grey"
-                        >
+                        <v-chip v-for="center in learningInsights.company_profile.common_cost_centers" :key="center"
+                          size="small" color="blue-grey">
                           {{ center }}
                         </v-chip>
                       </v-chip-group>
@@ -208,12 +176,8 @@
                     <v-col cols="12" md="4" v-if="learningInsights.company_profile.common_tasks?.length">
                       <div class="text-subtitle-2 mb-2">Common Tasks</div>
                       <v-chip-group>
-                        <v-chip 
-                          v-for="task in learningInsights.company_profile.common_tasks" 
-                          :key="task"
-                          size="small"
-                          color="teal"
-                        >
+                        <v-chip v-for="task in learningInsights.company_profile.common_tasks" :key="task" size="small"
+                          color="teal">
                           {{ task }}
                         </v-chip>
                       </v-chip-group>
@@ -221,12 +185,8 @@
                     <v-col cols="12" md="4" v-if="learningInsights.company_profile.typical_headers?.length">
                       <div class="text-subtitle-2 mb-2">Typical Headers</div>
                       <v-chip-group>
-                        <v-chip 
-                          v-for="header in learningInsights.company_profile.typical_headers" 
-                          :key="header"
-                          size="small"
-                          color="purple"
-                        >
+                        <v-chip v-for="header in learningInsights.company_profile.typical_headers" :key="header"
+                          size="small" color="purple">
                           {{ formatFieldName(header) }}
                         </v-chip>
                       </v-chip-group>
@@ -277,10 +237,30 @@
       </v-col>
     </v-row>
 
-    <v-alert v-if="loading" type="info" class="mb-4" border="start" variant="tonal">
+    <v-alert v-if="loading" type="info" class="mb-4" border="start" variant="tonal" @click:close="loading = false"
+      dismissible>
       Loading crew sheet data...
     </v-alert>
-    <v-alert v-if="error" type="error" class="mb-4" border="start" variant="tonal">
+
+    <v-alert 
+      v-model="showErrorAlert"
+      type="error" 
+      class="mb-4 position-relative" 
+      border="top" 
+      variant="tonal"
+      closable
+      @click:close="error = null"
+    >
+      <template v-slot:close>
+        <v-btn
+          icon
+          variant="text"
+          size="small"
+          @click.stop="error = null"
+        >
+          <v-icon>mdi-close</v-icon>
+        </v-btn>
+      </template>
       {{ error }}
     </v-alert>
 
@@ -429,107 +409,62 @@
           <v-icon class="mr-2" color="primary">mdi-file-plus</v-icon>
           Create Sheet Template
         </v-card-title>
-        
+
         <v-card-text>
           <v-form ref="templateFormRef">
             <v-row>
               <v-col cols="12">
-                <v-text-field
-                  v-model="templateForm.name"
-                  label="Template Name"
-                  required
-                  :rules="[v => !!v || 'Template name is required']"
-                  prepend-inner-icon="mdi-tag"
-                />
+                <v-text-field v-model="templateForm.name" label="Template Name" required
+                  :rules="[v => !!v || 'Template name is required']" prepend-inner-icon="mdi-tag" />
               </v-col>
-              
+
               <v-col cols="12">
-                <v-textarea
-                  v-model="templateForm.description"
-                  label="Description"
-                  rows="3"
-                  prepend-inner-icon="mdi-text"
-                />
+                <v-textarea v-model="templateForm.description" label="Description" rows="3"
+                  prepend-inner-icon="mdi-text" />
               </v-col>
-              
+
               <v-col cols="12" md="6">
-                <v-text-field
-                  v-model="templateForm.company"
-                  label="Company Name"
-                  prepend-inner-icon="mdi-domain"
-                />
+                <v-text-field v-model="templateForm.company" label="Company Name" prepend-inner-icon="mdi-domain" />
               </v-col>
-              
+
               <v-col cols="12" md="6">
-                <v-select
-                  v-model="templateForm.template_type"
-                  :items="[
-                    { value: 'time_tracking', title: 'Time Tracking' },
-                    { value: 'piece_work', title: 'Piece Work' },
-                    { value: 'mixed', title: 'Mixed Time/Piece' },
-                    { value: 'custom', title: 'Custom' }
-                  ]"
-                  label="Template Type"
-                  prepend-inner-icon="mdi-format-list-bulleted-type"
-                />
+                <v-select v-model="templateForm.template_type" :items="[
+                  { value: 'time_tracking', title: 'Time Tracking' },
+                  { value: 'piece_work', title: 'Piece Work' },
+                  { value: 'mixed', title: 'Mixed Time/Piece' },
+                  { value: 'custom', title: 'Custom' }
+                ]" label="Template Type" prepend-inner-icon="mdi-format-list-bulleted-type" />
               </v-col>
-              
+
               <v-col cols="12">
-                <v-file-input
-                  v-model="templateForm.template_image"
-                  label="Template Image (Optional)"
-                  accept="image/*"
-                  prepend-icon="mdi-camera"
-                  show-size
-                  clearable
-                >
+                <v-file-input v-model="templateForm.template_image" label="Template Image (Optional)" accept="image/*"
+                  prepend-icon="mdi-camera" show-size clearable>
                   <template v-slot:selection="{ fileNames }">
                     <template v-for="fileName in fileNames" :key="fileName">
                       {{ fileName }}
                     </template>
                   </template>
                 </v-file-input>
-                <v-card 
-                  v-if="templateForm.template_image && templateForm.template_image.length" 
-                  variant="outlined" 
-                  class="mt-2"
-                >
-                  <v-img
-                    :src="getImagePreview(templateForm.template_image[0])"
-                    max-height="200"
-                    contain
-                  />
+                <v-card v-if="templateForm.template_image && templateForm.template_image.length" variant="outlined"
+                  class="mt-2">
+                  <v-img :src="getImagePreview(templateForm.template_image[0])" max-height="200" contain />
                 </v-card>
               </v-col>
             </v-row>
           </v-form>
         </v-card-text>
-        
+
         <v-card-actions>
           <v-spacer />
-          <v-btn 
-            color="grey" 
-            variant="text" 
-            @click="cancelCreateTemplate"
-          >
+          <v-btn color="grey" variant="text" @click="cancelCreateTemplate">
             Cancel
           </v-btn>
-          <v-btn 
-            color="primary" 
-            variant="elevated"
-            :loading="processing"
-            @click="createTemplateFromSheet"
-          >
+          <v-btn color="primary" variant="elevated" :loading="processing" @click="createTemplateFromSheet">
             Create Template
           </v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
-
-
-
-
-
   </v-container>
 </template>
 
@@ -597,12 +532,12 @@ const sortedEmployees = computed(() => {
   return [...rows.value].sort((a, b) => {
     const aValue = a[sortColumn.value] || '';
     const bValue = b[sortColumn.value] || '';
-    
+
     const comparison = aValue.toString().localeCompare(bValue.toString(), undefined, {
       numeric: true,
       sensitivity: 'base'
     });
-    
+
     return sortDirection.value === 'asc' ? comparison : -comparison;
   });
 });
@@ -684,7 +619,7 @@ const formatTemplateType = (type: string) => {
 const getTemplateTypeColor = (type: string) => {
   const colors: Record<string, string> = {
     'time_tracking': 'blue',
-    'piece_work': 'green', 
+    'piece_work': 'green',
     'mixed': 'purple',
     'custom': 'orange'
   };
@@ -732,6 +667,10 @@ const statusColor = (status?: string) => {
 
 // Computed properties
 const currentSheet = computed(() => crewSheetStore.currentCrewSheet);
+const showErrorAlert = computed({
+  get: () => !!error.value,
+  set: (val) => !val && (error.value = null)
+});
 
 const canDownload = computed(() => {
   return currentSheet.value?.status === 'completed' && rows.value.length > 0;
@@ -742,16 +681,16 @@ const headerInfo = computed(() => {
   const data = typeof currentSheet.value.extracted_data === 'string'
     ? JSON.parse(currentSheet.value.extracted_data)
     : currentSheet.value.extracted_data;
-  
+
   if (data.header) return data.header;
-  
+
   const headerFields = ['date', 'location', 'supervisor', 'project', 'title'];
   const extractedHeader: Record<string, any> = {};
-  
+
   for (const field of headerFields) {
     if (data[field]) extractedHeader[field] = data[field];
   }
-  
+
   return Object.keys(extractedHeader).length > 0 ? extractedHeader : null;
 });
 
@@ -760,24 +699,24 @@ const summaryInfo = computed(() => {
   const data = typeof currentSheet.value.extracted_data === 'string'
     ? JSON.parse(currentSheet.value.extracted_data)
     : currentSheet.value.extracted_data;
-  
+
   if (data.metadata && typeof data.metadata === 'object') return data.metadata;
   if (data.summary && typeof data.summary === 'object') return data.summary;
-  
+
   const summary: Record<string, any> = {};
   let employees = data.employees || data.rows || data.data || [];
   if (!Array.isArray(employees) && typeof employees === 'object') {
     employees = Object.values(employees);
   }
   summary['Total Employees'] = employees.length;
-  
+
   const roleKey = ['role', 'position', 'job'].find(k => employees.length && k in employees[0]);
   if (roleKey) {
     const uniqueRoles = Array.from(new Set(employees.map((e: any) => e[roleKey] || '').filter(Boolean)));
     summary['Unique Roles'] = uniqueRoles.length;
     summary['Roles'] = uniqueRoles.join(', ');
   }
-  
+
   return summary;
 });
 
@@ -795,14 +734,14 @@ const getCellValue = (employee: any, header: string) => {
   if (!employee) return '';
   const fieldName = isEmployeeNameHeader(header) ? 'name' : header;
   const value = employee[fieldName];
-  
+
   if (value === null || value === undefined) return '';
   if (typeof value === 'object' && value !== null) {
     if ('value' in value) return value.value || '';
     if ('text' in value) return value.text || '';
   }
   if (value === true || value === 'true' || value === '✓') return '✓';
-  
+
   return String(value);
 };
 
@@ -822,11 +761,11 @@ const handleCellInput = (rowIndex: number, header: string) => {
   const fieldName = isEmployeeNameHeader(header) ? 'name' : header;
   isEdited.value = true;
   editCount.value++;
-  
+
   if (!rows.value[rowIndex]._edited) {
     rows.value[rowIndex]._edited = [];
   }
-  
+
   if (!rows.value[rowIndex]._edited.includes(fieldName)) {
     rows.value[rowIndex]._edited.push(fieldName);
   }
@@ -855,7 +794,7 @@ const toggleEditingHeaders = () => {
 // AI improvement functions using store
 const loadTemplateSuggestions = async () => {
   if (!currentSheet.value) return;
-  
+
   loadingTemplates.value = true;
   try {
     const suggestions = await crewSheetStore.getTemplateSuggestions();
@@ -870,16 +809,16 @@ const loadTemplateSuggestions = async () => {
 
 const processWithTemplate = async () => {
   if (!currentSheet.value || !selectedTemplate.value) return;
-  
+
   processing.value = true;
   error.value = null;
-  
+
   try {
     const response = await crewSheetStore.processWithTemplate(
       currentSheet.value.id,
       selectedTemplate.value
     );
-    
+
     if (response.id) {
       learningMetrics.value = response.learning_metrics;
       showLearningMetrics.value = true;
@@ -896,13 +835,13 @@ const processWithTemplate = async () => {
 
 const processWithAI = async () => {
   if (!currentSheet.value) return;
-  
+
   processing.value = true;
   error.value = null;
-  
+
   try {
     const response = await crewSheetStore.processWithAI(currentSheet.value.id);
-    
+
     if (response.id) {
       learningMetrics.value = response.learning_metrics;
       showLearningMetrics.value = true;
@@ -919,14 +858,14 @@ const processWithAI = async () => {
 
 const checkReviewQueueStatus = async () => {
   if (!currentSheet.value) return;
-  
+
   try {
     const response = await crewSheetStore.getReviewQueue();
-    
+
     const queueItem = response.queue_items?.find(
       (item: any) => item.crew_sheet_id === currentSheet.value.id
     );
-    
+
     if (queueItem) {
       reviewQueueItem.value = queueItem;
       inReviewQueue.value = true;
@@ -950,7 +889,7 @@ const loadLearningInsights = async () => {
 
 const createTemplateFromSheet = async () => {
   if (!currentSheet.value) return;
-  
+
   try {
     const templateData: any = {
       template_name: templateForm.value.name,
@@ -958,17 +897,17 @@ const createTemplateFromSheet = async () => {
       company: templateForm.value.company,
       template_type: templateForm.value.template_type
     };
-    
+
     // Add image if provided
     if (templateForm.value.template_image.length > 0) {
       templateData.template_image = templateForm.value.template_image[0];
     }
-    
+
     const response = await crewSheetStore.createTemplate(
       currentSheet.value.id,
       templateData
     );
-    
+
     if (response.template_id) {
       showCreateTemplateDialog.value = false;
       resetTemplateForm();
@@ -1007,7 +946,7 @@ const getImagePreview = (file: File): string => {
 // Session management using store
 const startSession = async () => {
   if (!currentSheet.value) return;
-  
+
   try {
     const response = await crewSheetStore.startSession(currentSheet.value.id);
     sessionId.value = response.session_id;
@@ -1018,7 +957,7 @@ const startSession = async () => {
 
 const endSession = async (outcome: string = 'saved') => {
   if (!sessionId.value) return;
-  
+
   try {
     await crewSheetStore.endSession(sessionId.value, outcome);
     sessionId.value = null;
@@ -1029,7 +968,7 @@ const endSession = async (outcome: string = 'saved') => {
 
 const trackEdit = async (fieldName: string, originalValue: string, newValue: string, rowIndex: number) => {
   if (!sessionId.value) return;
-  
+
   try {
     await crewSheetStore.trackEdit(
       sessionId.value,
@@ -1048,17 +987,17 @@ const trackEdit = async (fieldName: string, originalValue: string, newValue: str
 const loadSheet = async () => {
   loading.value = true;
   error.value = '';
-  
+
   try {
     await crewSheetStore.fetchCrewSheet(sheetId.value);
-    
+
     if (!currentSheet.value) {
       throw new Error('Failed to load crew sheet data');
     }
-    
+
     const data = currentSheet.value.extracted_data;
     console.log('Raw extracted data:', data);
-    
+
     // Handle different data formats
     let parsed;
     if (typeof data === 'string') {
@@ -1071,7 +1010,7 @@ const loadSheet = async () => {
     } else {
       parsed = data || {};
     }
-    
+
     console.log('Parsed data structure:', parsed);
 
     // Extract headers with multiple fallback options
@@ -1089,12 +1028,12 @@ const loadSheet = async () => {
     } else if (parsed.rows && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
       extractedHeaders = Object.keys(parsed.rows[0]);
     }
-    
+
     headers.value = extractedHeaders.filter(h => h && typeof h === 'string');
     console.log('Extracted headers:', headers.value);
 
     // Ensure EMPLOYEE NAME header exists
-    const hasEmployeeName = headers.value.some(h => 
+    const hasEmployeeName = headers.value.some(h =>
       ['EMPLOYEE NAME', 'EMPLOYEE_NAME', 'name', 'Name', 'EMPLOYEE', 'employee'].includes(h)
     );
 
@@ -1111,9 +1050,9 @@ const loadSheet = async () => {
     } else if (parsed.rows && Array.isArray(parsed.rows)) {
       extractedRows = parsed.rows;
     }
-    
+
     console.log('Extracted rows:', extractedRows);
-    
+
     // Ensure all rows have all header fields
     rows.value = extractedRows.map(row => {
       const normalizedRow: Record<string, string> = {};
@@ -1123,16 +1062,16 @@ const loadSheet = async () => {
           normalizedRow[header] = row.name || row.EMPLOYEE_NAME || row['EMPLOYEE NAME'] || '';
         } else {
           // Try direct match first, then variations
-          normalizedRow[header] = row[header] || 
-                                 row[header.toLowerCase()] || 
-                                 row[header.replace(/[_\s]/g, '')] || 
-                                 row[header.replace(/_/g, ' ')] || 
-                                 '';
+          normalizedRow[header] = row[header] ||
+            row[header.toLowerCase()] ||
+            row[header.replace(/[_\s]/g, '')] ||
+            row[header.replace(/_/g, ' ')] ||
+            '';
         }
       }
       return normalizedRow;
     });
-    
+
     // Add default row if no data
     if (rows.value.length === 0 && headers.value.length > 0) {
       const defaultRow: Record<string, string> = {};
@@ -1141,15 +1080,15 @@ const loadSheet = async () => {
       });
       rows.value = [defaultRow];
     }
-    
+
     console.log('Final table state - headers:', headers.value, 'rows:', rows.value);
-    
+
     isEdited.value = false;
     editCount.value = 0;
   } catch (err: any) {
     console.error('Failed to load sheet:', err);
     error.value = err.message || 'Failed to load sheet';
-    
+
     // Fallback to empty table structure
     headers.value = ['EMPLOYEE NAME'];
     rows.value = [{ 'EMPLOYEE NAME': '' }];
@@ -1160,10 +1099,10 @@ const loadSheet = async () => {
 
 const processCrewSheet = async () => {
   if (!currentSheet.value) return;
-  
+
   processing.value = true;
   error.value = null;
-  
+
   try {
     await startSession();
     await crewSheetStore.processCrewSheet(currentSheet.value.id);

@@ -582,6 +582,7 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
                     'company_name': profile.company_name,
                     'common_cost_centers': profile.common_cost_centers,
                     'common_tasks': profile.common_tasks,
+                    'common_crew_names': profile.common_crew_names,
                     'typical_headers': profile.typical_headers,
                     'sheets_processed': profile.sheets_processed,
                     'accuracy_improvement': profile.accuracy_improvement,
@@ -612,6 +613,7 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
                         'company_name': f"{request.user.username}'s Company",
                         'common_cost_centers': [],
                         'common_tasks': [],
+                        'common_crew_names': [],
                         'typical_headers': ["EMPLOYEE NAME", "HOURS", "TASK", "COST CENTER"],
                         'sheets_processed': 0,
                         'accuracy_improvement': 0.0
@@ -623,6 +625,7 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
                     'company_name': profile.company_name,
                     'common_cost_centers': profile.common_cost_centers,
                     'common_tasks': profile.common_tasks,
+                    'common_crew_names': profile.common_crew_names,
                     'typical_headers': profile.typical_headers,
                     'sheets_processed': profile.sheets_processed,
                     'accuracy_improvement': profile.accuracy_improvement,
@@ -641,6 +644,7 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
                         'company_name': f"{request.user.username}'s Company",
                         'common_cost_centers': [],
                         'common_tasks': [],
+                        'common_crew_names': [],
                         'typical_headers': ["EMPLOYEE NAME", "HOURS", "TASK", "COST CENTER"],
                         'sheets_processed': 0,
                         'accuracy_improvement': 0.0
@@ -671,6 +675,7 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
                     'company_name': profile.company_name,
                     'common_cost_centers': profile.common_cost_centers,
                     'common_tasks': profile.common_tasks,
+                    'common_crew_names': profile.common_crew_names,
                     'typical_headers': profile.typical_headers,
                     'sheets_processed': profile.sheets_processed,
                     'accuracy_improvement': profile.accuracy_improvement,
@@ -752,13 +757,13 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
         try:
             # Get profile
             profile = CompanyLearningProfile.objects.get(user=request.user)
-            
+
             # Remove cost center if in list
             cost_center = request.data.get('cost_center', '')
             if cost_center and cost_center in profile.common_cost_centers:
                 profile.common_cost_centers.remove(cost_center)
                 profile.save()
-            
+
             return Response({
                 'success': True,
                 'common_cost_centers': profile.common_cost_centers
@@ -778,13 +783,13 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
         try:
             # Get profile
             profile = CompanyLearningProfile.objects.get(user=request.user)
-            
+
             # Remove task if in list
             task = request.data.get('task', '')
             if task and task in profile.common_tasks:
                 profile.common_tasks.remove(task)
                 profile.save()
-            
+
             return Response({
                 'success': True,
                 'common_tasks': profile.common_tasks
@@ -796,6 +801,66 @@ class CrewSheetViewSet(viewsets.ModelViewSet):
         except Exception as e:
             return Response({
                 'error': f'Failed to remove task: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def add_crew_member(self, request):
+        """Add a crew member to the company learning profile."""
+        try:
+            from .crew_matching_service import CrewManagementService
+
+            crew_name = request.data.get('crew_name', '').strip()
+            if not crew_name:
+                return Response({
+                    'error': 'crew_name is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            result = CrewManagementService.add_crew_member(
+                request.user, crew_name)
+
+            if result['success']:
+                return Response({
+                    'success': True,
+                    'name': result['name']
+                })
+            else:
+                return Response({
+                    'error': result['error']
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                'error': f'Failed to add crew member: {str(e)}'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    @action(detail=False, methods=['post'])
+    def remove_crew_member(self, request):
+        """Remove a crew member from the company learning profile."""
+        try:
+            from .crew_matching_service import CrewManagementService
+
+            crew_name = request.data.get('crew_name', '').strip()
+            if not crew_name:
+                return Response({
+                    'error': 'crew_name is required'
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            result = CrewManagementService.remove_crew_member(
+                request.user, crew_name)
+
+            if result['success']:
+                return Response({
+                    'success': True,
+                    'name': result['name']
+                })
+            else:
+                return Response({
+                    'error': result['error']
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+        except Exception as e:
+            return Response({
+                'error': f'Failed to remove crew member: {str(e)}'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 

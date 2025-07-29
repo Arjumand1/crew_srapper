@@ -28,9 +28,18 @@ import {
   VNavigationDrawer,
   VDivider,
   VLayout,
+  VDialog,
+  VSpacer,
+  VBtnGroup,
+  VChipGroup,
+  VSheet,
+  VExpansionPanel,
+  VExpansionPanelText,
+  VExpansionPanels,
+  VAlertTitle,
 } from "vuetify/components";
-import { aliases, mdi } from 'vuetify/iconsets/mdi'
-import '@mdi/font/css/materialdesignicons.css'
+import { aliases, mdi } from "vuetify/iconsets/mdi";
+import "@mdi/font/css/materialdesignicons.css";
 
 export default createVuetify({
   components: {
@@ -59,7 +68,17 @@ export default createVuetify({
     VAppBar,
     VNavigationDrawer,
     VDivider,
-    VLayout
+    VLayout,
+    VDialog,
+    VCardActions,
+    VSpacer,
+    VBtnGroup,
+    VChipGroup,
+    VSheet,
+    VExpansionPanel,
+    VExpansionPanelText,
+    VExpansionPanels,
+    VAlertTitle,
   },
   defaults: {
     VTextField: {
@@ -73,21 +92,21 @@ export default createVuetify({
     themes: {
       light: {
         colors: {
-          primary:   "#1976D2", // Blue (main actions)
+          primary: "#1976D2", // Blue (main actions)
           secondary: "#424242", // Dark Grey (secondary actions)
-          accent:    "#FFB300", // Amber (highlights)
-          success:   "#2E7D32", // Green (success)
-          info:      "#0288D1", // Cyan (info)
-          warning:   "#F9A825", // Amber dark (warning)
-          error:     "#D32F2F", // Red (error)
+          accent: "#FFB300", // Amber (highlights)
+          success: "#2E7D32", // Green (success)
+          info: "#0288D1", // Cyan (info)
+          warning: "#F9A825", // Amber dark (warning)
+          error: "#D32F2F", // Red (error)
           background: "#F5F7FA", // Light background
-          surface:   "#FFFFFF", // Cards, surfaces
+          surface: "#FFFFFF", // Cards, surfaces
         },
       },
     },
   },
   icons: {
-    defaultSet: 'mdi',
+    defaultSet: "mdi",
     aliases,
     sets: {
       mdi,
